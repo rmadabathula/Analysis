@@ -1,0 +1,391 @@
+top DEgs
+Number of DEgs in each treatment
+volcano plot
+Venn diagram
+
+
+
+
+
+
+
+install.packages("BiocManager")
+BiocManager::install("topGO")
+BiocManager::install("DESeq2")
+BiocManager::install("clusterProfiler")
+install.packages("ggplot2")
+install.packages("pheatmap")
+install.packages("GOplot")
+install.packages("tidyverse")
+install.packages("readxl")
+install.packages("writexl")
+install.packages(c("csv", "csvread"))
+install.packages("ggforce")
+BiocManager::install("EnhancedVolcano")
+BiocManager::install("DESeq2")
+
+
+library(BiocManager)
+library(DESeq2)
+library(ggplot2)
+library(pheatmap)
+library(GOplot)
+library(topGO)
+library(clusterProfiler)
+library(ggforce)
+
+
+sampleInfo <- data.frame(
+  row.names = c("S1", "S2", "S3", "S16", "S17", "S18"),  # Relevant sample IDs
+  condition = c("Control_1", "Control_1", "Control_1", "Treatment_1", "Treatment_1", "Treatment_1")  # Their conditions
+)
+
+
+#####matrix from methods 1 & 2####################################################################################
+
+# Load the counts matrix
+watermelon <- read.csv("countswatermelon.csv", row.names = 1)
+
+# Subset the count matrix to include only the samples in sampleInfo
+watermelon <- watermelon[, rownames(sampleInfo)]
+
+# Load the metadata
+watermelondata <- read.csv("countsdata.csv", row.names = 1)
+
+# Filter metadata for relevant samples
+watermelondata <- watermelondata[rownames(sampleInfo), ]
+
+head(watermelon)
+head(watermelondata)
+
+# Check if all samples in count matrix have metadata
+all(colnames(watermelon) %in% rownames(watermelondata))
+
+# Check if order and names match
+all(colnames(watermelon) == rownames(watermelondata))
+
+###########Differential Expression Analysis ############################
+dds <- DESeqDataSetFromMatrix(watermelon, watermelondata, design = ~ Condition)
+
+#or
+
+dds <-DESeqDataSetFromMatrix(countData = round(watermelon),
+                             colData = watermelondata,
+                             design = ~Condition)
+dds <- DESeq(dds)
+plotDispEsts(dds)
+par(mar=c(8,5,2,2))
+boxplot(log10(assays(dds)[["cooks"]]), range=0, las=2)
+
+
+#nofilteredresults###############################
+
+###watermelon_Effects_filtering
+watermelon_effects <- results(dds, contrast = c("Condition", "Treatment_1", "Control_1"), )
+
+summary(watermelon_effects)
+plotMA(watermelon_effects)
+plotMA(watermelon_effects, alpha=0.05, colSig= "blue", colNonSig = "black", main = "Treatment_1 vs Control_1")
+abline(h=c(-2,2), col="red", lwd=2)
+
+######To save the file######
+write.csv(watermelon_effects, file = "Control_1vsTreatment_1.csv")
+write.table(watermelon_effects, file = "Control_1vsTreatment_1.tsv", sep = "\t", col.names = NA, quote = FALSE)
+
+
+#filteredresults############################################
+watermelon_effects_filtered <- subset(watermelon_effects, padj < 0.05 & abs(log2FoldChange) > 2 )
+
+summary(watermelon_effects_filtered)
+
+plotMA(watermelon_effects_filtered)
+
+abline(h=c(-2,2), col="red", lwd=2)
+
+watermelon_effects_filtered <- watermelon_effects_filtered[!is.na(watermelon_effects_filtered$padj), ]
+
+summary(watermelon_effects_filtered)
+
+watermelon_effects_filtered <- watermelon_effects_filtered[order(watermelon_effects_filtered$log2FoldChange & watermelon_effects_filtered$padj ),]
+
+
+
+#filteredresults############################################
+
+watermelon_effects_filtered <- subset(watermelon_effects, padj < 0.05 & abs(log2FoldChange) > 2 )
+
+watermelon_effects_filtered <- watermelon_effects_filtered[order(watermelon_effects_filtered$log2FoldChange & watermelon_effects_filtered$padj ),]
+
+watermelon_effects_filtered <- watermelon_effects_filtered[order(watermelon_effects_filtered$log2FoldChange & watermelon_effects_filtered$padj ),]
+
+summary(watermelon_effects_filtered)
+
+plotMA(watermelon_effects_filtered)
+
+abline(h=c(-2,2), col="red", lwd=2)
+
+watermelon_effects_filtered <- watermelon_effects_filtered[!is.na(watermelon_effects_filtered$padj), ]
+
+summary(watermelon_effects_filtered)
+
+write.table(watermelon_effects_filtered, file = "Control_1vsTreatment_1_filtered.tsv", sep = "\t", col.names = NA, quote = FALSE)
+
+
+###Someplots###
+
+library(EnhancedVolcano)
+
+EnhancedVolcano(watermelon_effects,lab = rownames(watermelon_effects), x = "log2FoldChange", y = "pvalue")
+
+EnhancedVolcano(
+  watermelon_effects,
+  lab = rownames(watermelon_effects),      # Gene labels
+  x = "log2FoldChange",                    # X-axis: log2 Fold Change
+  y = "pvalue",                            # Y-axis: p-value
+  title = "Control_2 vs Treatment_2",      # Custom title
+  xlab = "Log2 Fold Change",               # X-axis label
+  ylab = "-Log10 P-value",                 # Y-axis label
+  pCutoff = 0.05,                          # P-value cutoff for significance
+  FCcutoff = 2,                            # Fold-change cutoff for significance
+  col = c("grey30", "forestgreen", "royalblue", "red2")  # Customize colors
+)
+
+
+
+###Heatmap
+
+watermelon_effects_ordered <- watermelon_effects[order(watermelon_effects$padj),]
+
+top_genes <- row.names(watermelon_effects_ordered)[1:50]
+
+library(pheatmap)
+
+pheatmap(counts(dds, normalized = TRUE)[top_genes, ],
+         scale = "row",
+         annotation_col = watermelondata)
+
+library(ggplot2)
+
+rld <- rlog(dds, blind = F)
+
+plotPCA(rld, intgroup = "Condition") + geom_text(aes(label=name),
+                                                 vjust=0.2) 
+
+# Enhanced PCA Plot
+plotPCA(rld, intgroup = "Condition") +
+  geom_text(aes(label = name), vjust = 0.001, size = 4) +  # Larger text for labels
+  theme_minimal() +                                      # Minimal background
+  theme(
+    panel.background = element_rect(fill = "white", color = "black"), # Clean white panel with border
+    panel.grid.major = element_line(color = "grey90"),                # Light grid lines
+    panel.grid.minor = element_blank(),                               # Remove minor grid lines
+    axis.text = element_text(size = 12),                              # Larger axis text
+    axis.title = element_text(size = 14, face = "bold"),              # Bold axis titles
+    legend.position = "top",                                          # Move legend to the top
+    legend.text = element_text(size = 12)                             # Increase legend text size
+  ) +
+  geom_point(aes(color = Condition), size = 2, shape = 19) +          # Bigger points with color
+  labs(
+    title = "PCA Plot: Treatment_1 vs Control_1",                     # Add a title
+    x = "Principal Component 1 (PC1)",                                # X-axis label
+    y = "Principal Component 2 (PC2)"                                 # Y-axis label
+  )
+
+plotPCA(rld, intgroup = "condition") + geom_text(aes(label=name),
+                                                 vjust=0.2) + theme_bw() + ggforce::geom_mark_rect(expand = 0.00001)
+library(ggplot2)
+library(ggforce)
+# Enhanced PCA Plot
+plotPCA(rld, intgroup = "Condition") +
+  geom_text(aes(label = name), vjust = 0.001, size = 4, fontface = "bold") +  # Larger and bold text for labels
+  geom_point(aes(color = Condition), size = 2, shape = 19) +               # Larger points with colors
+  theme_bw() +                                                             # White background
+  ggforce::geom_mark_rect(aes(fill = Condition), expand = 0.0001, alpha = 0.2) +  # Highlight groups
+  theme(
+    panel.background = element_rect(fill = "white", color = "black"),  # Light blue background
+    panel.grid.major = element_line(color = "lightblue"),                     # Major grid lines in white
+    panel.grid.minor = element_blank(),                                   # No minor grid lines
+    axis.text = element_text(size = 12, color = "black"),                 # Larger axis text
+    axis.title = element_text(size = 14, face = "bold"),                  # Bold axis titles
+    legend.position = "top",                                              # Legend at the top
+    legend.title = element_blank(),                                       # Remove legend title
+    legend.text = element_text(size = 12)                                 # Larger legend text
+  ) +
+  labs(
+    title = "Enhanced PCA Plot: Treatment_1 vs Control_1",                # Add a descriptive title
+    x = "Principal Component 1 (PC1)",                                    # X-axis label
+    y = "Principal Component 2 (PC2)"                                     # Y-axis label
+  )
+
+ d4<-read.csv("C:/Users/Student/Desktop/Treatment3 Vs Treatment4/Treatment_3vsTreatment_4.csv")
+ v4<-  subset(d4, padj < 0.05 & abs(log2FoldChange) > 2 )
+ v42<-v4[1]
+ v5 <- t(v42)
+ v52 <- as.data.frame(v5)
+
+venn.diagram(
+     x = list(v2, v3, v4),
+     category.names = c("Set 1" , "Set 2 " , "Set 3"),
+     filename = '14_venn_diagramm.png',
+     output=TRUE
+ ).
+
+
+
+
+
+
+
+venn diagram:
+
+if (!require(devtools)) install.packages("devtools")
+devtools::install_github("yanlinlin82/ggvenn")
+
+library(ggvenn)
+
+BASICS:
+First upload the CSV FILE
+THEN FILTER IT
+THEN TAKE THE FIRST COLUMN
+THEN TRANSPOSE IT
+THEN REMOVE THE HEADERS
+
+v1 <- read.table("v1.txt" )
+v2 <- read.table("v2.txt" )
+v3 <- read.table("v3.txt" )
+v4 <- read.table("v4.txt" )
+
+FOR EXAMPLE:
+v1<-read.csv("C:/Users/Student/Desktop/Treatment1 Vs Treatment2/Treatment_1vsTreatment_2.csv")
+v12<-  subset(v1, padj < 0.05 & abs(log2FoldChange) > 2 )
+v121<-v12[1]
+t1<-t(v121)
+colnames(t1) <- NULL ###SIMILARLY DO FOR THE OTHER SAMPLES AND THEN GO FOR VENN DIAGRAM
+
+#other files according to your analysis v5 or v6 and so on 
+# if you using the the filter file of first column just type the file name below (set1=v1 or your filter file name) and you can use the treatment name instead of set1 and so on
+# Prepare data as a list of sets
+
+venn_data <- list( Set1 = v1,  Set2 = v2,  Set3 = v3,  Set4 = v4)
+
+ggvenn(
+  venn_data, 
+  fill_color = c("#0073C2FF", "#EFC000FF", "#868686FF", "#CD534CFF"),
+  stroke_size = 0.5, 
+  set_name_size = 4
+)
+
+####################################################################
+##all data will be same as above . IN PLACE OF X PUT THE VENN_DATA
+
+install.packages("VennDiagram")
+
+library(VennDiagram)
+
+
+venn.diagram(x, filename = "venn-4-dimensions.png") #without color image and image will be saved in present directory
+
+
+display_venn <- function(x, ...){
+  grid.newpage()
+  venn_object <- venn.diagram(x, filename = NULL, ...)
+  grid.draw(venn_object)
+}
+display_venn(x) #without color
+
+
+# Change category names
+# Change fill color
+display_venn(
+  x,
+  category.names = c("Set 1" , "Set 2 " , "Set 3", "Set 4"),
+  fill = c("#999999", "#E69F00", "#56B4E9", "#009E73")
+  )
+
+
+
+# Further customization
+display_venn(
+        x,
+        category.names = c("Set 1" , "Set 2 " , "Set 3", "Set 4"),
+        # Circles
+        lwd = 2,
+        lty = 'blank',
+        fill = c("#999999", "#E69F00", "#56B4E9", "#009E73"),
+        # Numbers
+        cex = .9,
+        fontface = "italic",
+        # Set names
+        cat.cex = 1,
+        cat.fontface = "bold",
+        cat.default.pos = "outer",
+        cat.dist = c(0.055, 0.055, 0.1, 0.1)
+)
+
+
+library(BiocManager)
+BiocManager::install("GenomicFeatures")
+library(GenomicFeatures)
+install.packages("pheatmap")
+
+calcTPM <- function(counts, lengths) {
+  lengths_kb <- lengths / 1000
+  rate <- counts / lengths_kb
+  tpm <- rate / sum(rate) * 1e6
+    return(tpm)                       ### function to calculate Tpm ###
+}
+
+
+count_file <- read.csv(file = "Countswatermelon.csv",
+                         row.names = 1, header = TRUE
+                         )
+gtf_file <- "97103_v2.5.gff3.gz"
+
+txdb <-makeTxDbFromGFF(gtf_file, format =  "gff3")
+txdb
+
+
+exons_by_gene <- exonsBy(txdb, by = "gene")
+gene_lengths <- vapply(exons_by_gene, function(gr) sum(width(reduce(gr))), numeric(1))    ### summing up the exons in a gene & determining the length of each gene ####
+
+
+common_genes <- intersect(rownames(count_file), names(gene_lengths))
+
+if(length(common_genes) == 0) {
+  stop("No Overlapping gene IDs between the count table and the GTF-derived gene lengths.")
+}
+
+counts_data <- count_file[common_genes, ]
+gene_lengths <- gene_lengths[common_genes]
+
+attr(count_file, "gene_lengths") <- gene_lengths
+
+counts_data[] <- lapply(counts_data, function(x) as.numeric(as.character(x)))
+
+tpm_matrix <- apply(counts_data, 2, calcTPM, lengths = gene_lengths)
+
+tpm_matrix <- as.data.frame(tpm_matrix)
+
+write.table(tpm_matrix, file = "TPM_values.txt", sep = "\t", quote = FALSE, col.names = NA)
+
+View(tpm_matrix)
+
+
+genes_of_interest <- c("AT1G53430", "AT1G53440","AT5G01950")
+genes_of_interest
+
+heatmap_data <- tpm_matrix[rownames(tpm_matrix) %in% genes_of_interest, ]
+
+if(nrow(heatmap_data) == 0) {
+  stop("None of the specified gene of interst were found in the TPM matrix")
+}
+
+log_tpm <- log2(heatmap_data + 1)
+
+metadata <- read.csv("Sample_Metadata.csv", row.names = 1)
+library(pheatmap)
+pheatmap(log_tpm,
+         cluster_rows = TRUE, cluster_cols = FALSE, annotation_col = metadata,
+         main = "Heatmap of TPM values for Selected Arabidopsis genes")
+
+
