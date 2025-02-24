@@ -1,0 +1,801 @@
+setwd("C:/Users/Student/Desktop/Alternative Splicing")
+getwd("C:/Users/Student/Desktop/Alternative Splicing")
+library(GenomicFeatures)
+library(Rsamtools)
+library(txdbmaker)
+library(GenomicAlignments)
+library(GenomicRanges)
+library(DEXSeq)
+BiocManager::install("DEXSeq", force=TRUE)
+download.file(
+  "https://ftp.ensembl.org/pub/release-113/gtf/drosophila_melanogaster/Drosophila_melanogaster.BDGP6.46.113.gtf.gz",
+  destfile = "Drosophila_melanogaster.BDGP6.46.113.gtf.gz"
+)
+
+
+download.file(
+  "https://ftp.ensemblgenomes.ebi.ac.uk/pub/plants/release-60/gtf/arabidopsis_thaliana/Arabidopsis_thaliana.TAIR10.60.gtf.gz",
+  destfile="Arabidopsis_thaliana.TAIR10.60.gtf.gz")
+file.exists("Drosophila_melanogaster.BDGP6.46.113.gtf.gz")
+
+txdb = makeTxDbFromGFF("Drosophila_melanogaster.BDGP6.46.113.gtf.gz")
+txdb
+
+file.remove("Drosophila_melanogaster.BDGP6.46.113.gtf.gz")
+
+
+flattenedAnnotation <- exonicParts(txdb, linked.to.single.gene.only = TRUE)
+flattenedAnnotation
+
+
+names(flattenedAnnotation) <- sprintf("%s:E%0.3d", 
+                                      flattenedAnnotation$gene_id,
+                                      flattenedAnnotation$exonic_part)
+names(flattenedAnnotation)
+
+# BAM files for the first condition
+bamFiles_1 <- c(
+  "TCR1_SRR28863576_Aligned.sortedByCoord.out.bam",
+  "TCR2_SRR28863575_Aligned.sortedByCoord.out.bam",
+  "TCR3_SRR28863574_Aligned.sortedByCoord.out.bam"
+)
+
+# BAM files for the second condition
+bamFiles_2 <- c(
+  "CCR1_SRR28863579_Aligned.sortedByCoord.out.bam",
+  "CCR2_SRR28863578_Aligned.sortedByCoord.out.bam",
+  "CCR3_SRR28863577_Aligned.sortedByCoord.out.bam"
+)
+
+# If needed, a third set of BAM files (optional, based on your data)
+bamFiles_3 <- c(
+  "TCR1_SRR28863576_Aligned.sortedByCoord.out.bam",
+  "TCR2_SRR28863575_Aligned.sortedByCoord.out.bam",
+  "TCR3_SRR28863574_Aligned.sortedByCoord.out.bam",
+  "CCR1_SRR28863579_Aligned.sortedByCoord.out.bam",
+  "CCR2_SRR28863578_Aligned.sortedByCoord.out.bam",
+  "CCR3_SRR28863577_Aligned.sortedByCoord.out.bam"
+)
+
+
+bamFiles1 <- BamFileList(bamFiles_1)
+
+bamFiles2 <- BamFileList(bamFiles_2)
+
+bamFiles3 <- BamFileList(bamFiles_3)
+
+
+
+bamFiles <- c(bamFiles1, bamFiles2, bamFiles3)
+
+if (any(!file.exists(path(bamFiles)))) {
+  stop("One or more BAM files do not exist.")
+}
+
+seqlevelsStyle(flattenedAnnotation) <- "NCBI"
+
+seqlevelsStyle(flattenedAnnotation)
+
+se1 <- summarizeOverlaps(
+  features = flattenedAnnotation,
+  reads = bamFiles1,
+  mode = "Union", 
+  ignore.strand = TRUE,
+)
+se1
+summary(se1)
+
+
+
+
+
+se2 <- summarizeOverlaps(
+  features = flattenedAnnotation,
+  reads = bamFiles2,
+  mode = "Union", 
+  singleEnd = FALSE,
+  ignore.strand = TRUE,
+  fragments = TRUE
+)
+se2
+summary(se2)
+se3 <- summarizeOverlaps(
+  features = flattenedAnnotation,
+  reads = bamFiles3,
+  mode = "Union", 
+  singleEnd = FALSE,
+  ignore.strand = TRUE,
+  fragments = TRUE
+)
+se3
+summary(se3)
+
+
+
+
+# Combine se1, se2, and se3 into a single object
+combined_se <- cbind(assay(se1), assay(se2), assay(se3))
+
+# Inspect the combined object
+combined_se
+
+# View the list data from the assays in the combined object
+combined_se@assays@data@listData
+
+
+
+# Combine se1, se2, and se3 into a single SummarizedExperiment object
+combined_se <- SummarizedExperiment(
+  assays = list(counts = cbind(assay(se1), assay(se2), assay(se3))),
+  rowRanges = rowRanges(se1),
+  colData = DataFrame(condition = c(rep("Curcumin", 3), rep("Control", 3), 
+                                    rep("Curcumin", 3), rep("Control", 3), 
+                                    rep("Curcumin", 3), rep("Control", 3)))
+)
+
+# Inspect the combined object
+combined_se
+
+# View the list data from the assays in the combined object
+assays(combined_se)$counts
+
+
+dim(se1)
+dim(se2)
+dim(se3)
+colnames(se1)
+colnames(se2)
+colnames(se3)
+setdiff(colnames(se3), c(colnames(se1), colnames(se2)))
+combined_se <- SummarizedExperiment(
+  assays = list(counts = cbind(assay(se1), assay(se2))),
+  rowRanges = rowRanges(se1),
+  colData = DataFrame(condition = c(rep("Curcumin", 3), rep("Control", 3)))
+)
+
+combined_se
+assays(combined_se)$counts
+
+head(assays(combined_se)$counts)  # Shows the first few rows
+tail(assays(combined_se)$counts)  # Shows the last few rows
+
+dim(assays(combined_se)$counts)  # Should return 88940 x 6
+write.csv(assays(combined_se)$counts, "combined_se_counts.csv", row.names = TRUE)
+
+write.csv(assays(combined_se)$counts, "C:/Users/Student/Desktop/combined_se_counts.csv", row.names = TRUE)
+
+
+
+
+
+
+colData(combined_se)$condition = factor(c(
+  "Curcumin", "Curcumin", "Curcumin", 
+  "Control", "Control", "Control"
+))
+colData(combined_se)
+
+
+colData(combined_se)$libType = factor(c(
+  "paired-end", "paired-end", "paired-end", 
+  "paired-end", "paired-end", "paired-end"
+))
+colData(combined_se)
+
+
+dxd <- DEXSeqDataSetFromSE(combined_se, design = ~sample + exon + condition:exon)
+
+dxd
+
+colData(dxd)
+
+head(counts(dxd), 5)
+
+split( seq_len(ncol(dxd)), colData(dxd)$exon )
+
+head( featureCounts(dxd), 5 )
+
+head( rowRanges(dxd), 3 )
+
+dxd = estimateSizeFactors( dxd )
+
+dxd = estimateDispersions( dxd )
+dispersionFunction(dxd)
+
+
+plotDispEsts(dxd)
+
+dxd = testForDEU(dxd)
+counts(dxd)["FBgn0005666", ]
+head(rownames(dxd), 10)  # Check the first 10 row names (gene/exon IDs)
+dxd_filtered <- dxd[rowSums(counts(dxd) > 10) > 0, ]  # Keeps features with counts > 10 in at least one sample
+dim(dxd_filtered)
+# Filter out genes with low variance across samples (e.g., variance < 1)
+dxd_filtered = dxd[rowVars(counts(dxd)) > 1, ]
+dxd_filtered = estimateExonFoldChanges(dxd_filtered, fitExpToVar="condition", denominator="Control")
+counts(dxd)["FBgn0005666", ]
+counts(dxd)["FBgn0086906", ]
+counts(dxd)["FBgn0261836", ]
+head(rownames(dxd), 10)  # Check the first 10 gene/exon IDs in the dataset
+dxd_filtered = estimateExonFoldChanges(dxd_filtered, fitExpToVar="condition", denominator="Control")
+head(colData(dxd_filtered))
+levels(colData(dxd_filtered)$condition)
+colData(dxd_filtered)$condition <- factor(colData(dxd_filtered)$condition, levels = c("Control", "Curcumin"))
+class(dxd_filtered)
+dim(dxd_filtered)
+dxd_filtered = estimateExonFoldChanges(dxd_filtered, fitExpToVar="condition", denominator="Control")
+# Filter out genes with low expression (count > 10 in at least 3 samples)
+dxd_filtered = dxd[rowSums(counts(dxd) > 10) >= 3, ]
+dxd_filtered = estimateExonFoldChanges(dxd_filtered, fitExpToVar="Condition", denominator="Control")
+# Remove genes with zero or low counts across all conditions
+dxd_filtered = dxd_filtered[rowSums(counts(dxd_filtered) > 0) > 1, ]
+dxd_filtered = estimateExonFoldChanges(dxd_filtered, fitExpToVar="condition", denominator="Control")
+dxd_filtered = testForDEU(dxd_filtered)
+dxr1 = DEXSeqResults(dxd_filtered)
+head(dxr1)
+
+dxd = estimateExonFoldChanges( dxd, fitExpToVar="condition", denominator = "Control")
+
+dxr1 = DEXSeqResults( dxd )
+
+dxr1
+
+
+
+
+
+
+
+
+# Convert the DEXSeqResults object to a data frame
+dfexon <- as.data.frame(dxr1)
+
+# Filter for significant results with log2 fold change > 1 (now using Curcumin)
+filtered <- subset(dfexon, padj < 0.05 & abs(log2fold_Curcumin_Control) > 1)
+
+# Remove rows with NA values in the 'padj' column
+filtered <- filtered[!is.na(filtered$padj), ]
+
+# Order the filtered data by log2 fold change in decreasing order
+filtered <- filtered[order(filtered$log2fold_Curcumin_Control, decreasing = TRUE), ]
+head(filtered)
+write.csv(filtered, "filtered_DEGs.csv", row.names = TRUE)
+# Install and load tidyr package if not already installed
+install.packages("tidyverse")
+library(tidyr)
+
+# Flatten the 'filtered' dataframe if it contains list columns
+filtered_flat <- unnest(filtered, cols = c(transcripts)) # Adjust for specific columns with lists
+
+# Export the cleaned data
+write.csv(filtered_flat, "filtered_DEGs.csv", row.names = TRUE)
+
+
+
+# Install the org.Dm.eg.db package
+BiocManager::install("org.Dm.eg.db")
+
+# Load the package
+library(org.Dm.eg.db)
+
+
+# Map gene IDs to gene names using the Drosophila annotation database
+filtered$DESCRIPTION <- mapIds(org.Dm.eg.db,
+                               keys = filtered$groupID,
+                               column = "GENENAME",
+                               keytype = "FLYBASE",
+                               multiVals = "first")
+# Map gene IDs to gene symbols
+filtered$gene_name <- mapIds(org.Dm.eg.db,
+                             keys = filtered$groupID,
+                             column = "SYMBOL",
+                             keytype = "FLYBASE",
+                             multiVals = "first")
+install.packages("writexl")
+library(writexl)
+
+# Save the filtered results to an Excel file
+write_xlsx(filtered, path = "~/Desktop/Alternative Splicing/DEXSeq_resultsAs0.05_Curcumin_vs_Control.xlsx")
+write_xlsx(filtered, path = "C:/Users/Student/Desktop/Alternative Splicing/DEXSeq_resultsAs0.05_Curcumin_vs_Control.xlsx")
+
+
+
+###Plotting#
+# Loop through each gene in the filtered dataset
+for (gene_id in filtered$groupID) {
+  
+  # Generate the plot for each gene in the filtered dataset
+  plotDEXSeq(dxr1, gene_id, 
+             cex.axis = 1, cex = 1, lwd = 3, FDR = 0.01, 
+             names = TRUE, splicing = TRUE, legend = TRUE, expression = TRUE)
+  
+  # Optionally, save each plot to a file
+  # Example: Save to PNG files (uncomment below if needed)
+  # png(paste0("~/Desktop/Alternative Splicing/plot_", gene_id, ".png"), width = 800, height = 600)
+  # dev.off()
+}
+head(dxr1)
+dim(dxr1)
+# Remove rows with NA values in the 'log2fold' columns or other important columns
+filtered_data <- filtered[!is.na(filtered$log2fold_Curcumin_Control), ]
+# Plot for specific genes that are present in your filtered data
+plotDEXSeq(dxr1, "FBgn0000008:E002", cex.axis=1, cex=1, lwd=3, FDR=0.01, names = TRUE, 
+           splicing=TRUE, legend = TRUE, expression = TRUE)
+# Check if there are any non-zero read counts for a specific gene/exon
+counts(dxr1)["FBgn0000008:E002", ]
+# Check for genes with valid counts across all samples
+valid_genes <- rownames(dxr1)[rowSums(counts(dxr1) > 0) > 0]
+head(valid_genes, 10)
+# Select the first 4 valid genes
+top_4_valid_genes <- valid_genes[1:4]
+head(valid_genes, 4)
+pdf("C:/Users/Student/Desktop/Alternative Splicing/plots_top_4_valid_genes.pdf", width = 8, height = 6)
+for (gene in top_4_valid_genes) {
+  plotDEXSeq(dxr1, gene, cex.axis = 1, cex = 1, lwd = 3, FDR = 0.01, names = TRUE, 
+             splicing = TRUE, legend = TRUE, expression = TRUE)
+}
+dev.off()
+
+
+
+
+
+
+
+plotDEXSeq(dxr1, "FBgn0000003", cex.axis=1, cex=1, lwd=3, FDR=0.01, names = TRUE, 
+           splicing=TRUE, legend = TRUE, expression = TRUE)
+
+plotDEXSeq( dxr1, "AT2G38330", cex.axis=1, cex=1, lwd=3, FDR=0.01, names = TRUE , 
+            splicing=TRUE, legend = TRUE, expression = TRUE)
+
+
+plotDEXSeq( dxr1, "AT1G15520", cex.axis=1, cex=1, lwd=3, FDR=0.01, names = TRUE , 
+            splicing=TRUE, legend = TRUE, expression = TRUE)
+
+
+plotDEXSeq(dx, "AT2G16220", cex.axis=1, cex=1, lwd=3, FDR=0.01, names = TRUE , 
+           splicing=TRUE, legend = TRUE, expression = TRUE)
+
+
+# Set the output PDF file path
+output_pdf <- "~/Desktop/Alternative Splicing/plots_combined.pdf"
+
+# Open a PDF device to save multiple plots in one file
+pdf(output_pdf, width = 8, height = 6)  # Adjust width and height as needed
+
+# Loop through each gene and plot
+for (gene in filtered$groupID) {
+  # Plot the data for the current gene
+  plotDEXSeq(dxr1, gene, cex.axis=1, cex=1, lwd=3, FDR=0.01, 
+             names = TRUE, splicing=TRUE, legend = TRUE, expression = TRUE)
+}
+
+# Close the PDF device to save all plots
+dev.off()
+
+# Print a message confirming the PDF has been saved
+cat("All plots saved in PDF file at:", output_pdf, "\n")
+
+output_pdf <- "C:/Users/YourUsername/Desktop/Alternative Splicing/plots_combined.pdf"
+
+
+
+
+
+
+
+
+
+###Morevariables
+
+colData(combined_se)$genotype = factor(c("WT", "WT", "OE", "OE", "KO", "KO"))
+head(colData(combined_se)$genotype)
+str(colData(combined_se))
+# Modify the design formula to avoid including `exon` in `colData`
+dxd_COMPLEX <- DEXSeqDataSetFromSE(combined_se, design = ~sample + condition + genotype:condition)
+# Corrected design formula to match your column names in colData
+dxd_COMPLEX <- DEXSeqDataSetFromSE(combined_se, design = ~condition + genotype + condition:genotype + exon)
+
+
+design = ~ genotype + condition + genotype:condition + exon
+remove(dxd_COMPLEX)
+dxd_COMPLEX <- DEXSeqDataSetFromSE(combined_se, design = ~condition + genotype + condition:genotype + exon)
+
+sample + exon + condition:exon
+
+# Create the DEXSeq dataset with the corrected design formula
+dxd_COMPLEX <- DEXSeqDataSetFromSE(combined_se, design = ~condition + genotype + condition:genotype + exon)
+
+# View the DEXSeq dataset
+dxd_COMPLEX
+dxd_COMPLEX
+
+
+
+colData(dxd_COMPLEX)
+
+head(counts(dxd_COMPLEX), 5)
+
+split( seq_len(ncol(dxd_COMPLEX)), colData(dxd_COMPLEX)$exon )
+
+head( featureCounts(dxd_COMPLEX), 5 )
+
+head( rowRanges(dxd_COMPLEX), 3 )
+
+dxd_COMPLEX = estimateSizeFactors(dxd_COMPLEX)
+
+dxd_COMPLEX = estimateDispersions( dxd_COMPLEX )
+
+plotDispEsts(dxd_COMPLEX)
+
+
+
+
+
+
+
+
+
+dxd_COMPLEX = testForDEU(dxd_COMPLEX)
+dxd = estimateExonFoldChanges( dxd, fitExpToVar="condition", denominator = "Control")
+dxr1 = DEXSeqResults( dxd )
+dxr1
+dfexon <- as.data.frame(dxr1)
+filtered<- subset(dfexon,padj < 0.05 & abs(log2fold_Arsenic_Control) > 1)
+filtered <- filtered[!is.na(filtered$padj), ]
+filtered <- filtered[order(filtered$log2fold_Arsenic_Control, decreasing = TRUE), ]
+
+
+table(colData(dxd_COMPLEX)$condition)
+dxd_COMPLEX = testForDEU(dxd_COMPLEX, fullModel = ~ condition + exon, reducedModel = ~ exon)
+dxd_COMPLEX = dxd_COMPLEX[rowSums(counts(dxd_COMPLEX)) > 10, ]
+dxd_COMPLEX = testForDEU(dxd_COMPLEX, fullModel = ~ condition + exon, reducedModel = ~ exon)
+dxr1 = DEXSeqResults( dxd )
+dxr1
+# Convert the DEXSeq results to a data frame
+dfexon <- as.data.frame(dxr1)
+# Filter for significant results with log2 fold change > 1 (now using Curcumin)
+filtered <- subset(dfexon, padj < 0.05 & abs(log2fold_Curcumin_Control) > 1)
+# Remove rows with NA values in the 'padj' column
+filtered <- filtered[!is.na(filtered$padj), ]
+# Order the filtered data by log2 fold change in decreasing order
+filtered <- filtered[order(filtered$log2fold_Curcumin_Control, decreasing = TRUE), ]
+write_xlsx(filtered, path = "C:/Users/Student/Desktop/Alternative Splicing/DEXSeq_results_Curcumin_vs_Control.xlsx")
+
+
+
+
+
+
+
+
+# Load the Drosophila annotation database
+library(org.Dm.eg.db)
+# Map gene IDs to gene names using the Drosophila annotation database
+filtered$DESCRIPTION <- mapIds(org.Dm.eg.db,
+                               keys = filtered$groupID,
+                               column = "GENENAME",
+                               keytype = "FLYBASE",  # Using FLYBASE IDs for Drosophila
+                               multiVals = "first")
+# Map gene IDs to gene symbols (if available)
+filtered$gene_name <- mapIds(org.Dm.eg.db,
+                             keys = filtered$groupID,
+                             column = "SYMBOL",
+                             keytype = "FLYBASE",  # Using FLYBASE IDs for Drosophila
+                             multiVals = "first")
+
+# Export the filtered results to an Excel file
+write_xlsx(filtered, path = "C:/Users/Student/Desktop/Alternative Splicing/DEXSeq_results_Curcumin_vs_Control.xlsx")
+
+
+
+
+
+####IndividualF_box_-___###
+
+bamFiles_3 <- c(
+  "TCR2_SRR28863575_Aligned.sortedByCoord.out.bam",
+  "TCR1_SRR28863576_Aligned.sortedByCoord.out.bam",
+  "CCR1_SRR28863579_Aligned.sortedByCoord.out.bam",
+  "CCR2_SRR28863578_Aligned.sortedByCoord.out.bam",
+  "TCR3_SRR28863577_Aligned.sortedByCoord.out.bam",
+  "TCR3_SRR28863574_Aligned.sortedByCoord.out.bam"
+)
+
+se3@assays@data@listData
+# Adjust the colData for condition and libType
+colData(se3)$condition = factor(c("Curcumin",
+                                  "Curcumin",
+                                  "Curcumin",
+                                  "Control",
+                                  "Control",
+                                  "Control"
+))
+
+colData(se3)$libType = factor(c("paired-end",
+                                "paired-end",
+                                "paired-end",
+                                "paired-end",
+                                "paired-end",
+                                "paired-end"))
+
+
+# Create DEXSeq DataSet for F-box analysis
+dxd_fbox <- DEXSeqDataSetFromSE(se3, design = ~sample + exon + condition:exon)
+# Check dataset structure
+dxd_fbox
+# Inspect colData and counts
+colData(dxd_fbox)
+head(counts(dxd_fbox), 5)
+# Split by exon
+split(seq_len(ncol(dxd_fbox)), colData(dxd_fbox)$exon)
+# Check feature counts
+head(featureCounts(dxd_fbox), 5)
+# Inspect rowRanges
+head(rowRanges(dxd_fbox), 3)
+# Estimate size factors
+dxd_fbox = estimateSizeFactors(dxd_fbox)
+# Estimate dispersions
+dxd_fbox = estimateDispersions(dxd_fbox)
+# Plot dispersion estimates
+plotDispEsts(dxd_fbox)
+par(mar = c(5, 5, 4, 2))  # Adjust the margins
+plotDispEsts(dxd_fbox)
+dev.off()  # Close any open graphics devices
+
+
+# Test for differential exon usage
+dxd_fbox = testForDEU(dxd_fbox)
+
+# Estimate exon fold changes
+dxd_fbox = estimateExonFoldChanges(dxd_fbox, fitExpToVar="condition", denominator = "Control")
+# Get results
+dxd_fbox1 = DEXSeqResults(dxd_fbox)
+# Install the necessary library for gene ID mapping
+# Install the necessary library for Drosophila gene ID mapping
+BiocManager::install("org.Dm.eg.db")
+library(org.Dm.eg.db)
+dxd_fbox1
+
+dxd_fbox1_df <- as.data.frame(dxd_fbox1)
+# Filter significant results
+dxd_fbox1_df_filtered <- subset(dxd_fbox1_df, padj < 0.05 & abs(log2fold_Curcumin_Control) > 1)
+# Remove NA values in padj
+dxd_fbox1_df_filtered <- dxd_fbox1_df_filtered[!is.na(dxd_fbox1_df_filtered$padj), ]
+# Order the results by log2 fold change
+dxd_fbox1_df_filtered <- dxd_fbox1_df_filtered[order(dxd_fbox1_df_filtered$log2fold_Curcumin_Control, decreasing = TRUE), ]
+# Map gene IDs to gene names using the Drosophila annotation database
+dxd_fbox1_df_filtered$DESCRIPTION <- mapIds(org.Dm.eg.db,
+                                            keys = dxd_fbox1_df_filtered$groupID,
+                                            column = "GENENAME",
+                                            keytype = "FLYBASE",
+                                            multiVals = "first")
+
+# Write the filtered results to an Excel file
+write_xlsx(dxd_fbox1_df_filtered, path = "C:/Users/Student/Desktop/Alternative Splicing/DEXSeq_results_Curcumin_vs_Control_Fbox.xlsx")
+
+###OE############
+# Check the available data in 'se2'
+se2@assays@data@listData
+
+
+# Assign condition factor based on your data (Curcumin and Control)
+# Assign condition factor based on your data (6 samples in total, 3 Curcumin and 3 Control)
+colData(se3)$condition = factor(c("Curcumin", "Curcumin", "Curcumin", "Control", "Control", "Control"))
+
+ncol(se2)  # Check the number of samples
+ncol(se3)  # Check the number of samples in se3
+str(colData(se3))  # This will show the structure of colData and ensure 'condition' is assigned
+
+# Assign the library type factor (paired-end)
+colData(se3)$libType = factor(c("paired-end", "paired-end", "paired-end", "paired-end", "paired-end", "paired-end"))
+# Create a DEXSeqDataSet from the summarized experiment
+dxd_fboxOE <- DEXSeqDataSetFromSE(se3, design = ~sample + exon + condition:exon)
+# Check the data
+dxd_fboxOE
+# Check the column data
+colData(dxd_fboxOE)
+# View the first 5 counts
+head(counts(dxd_fboxOE), 5)
+# Split the data by exon
+split(seq_len(ncol(dxd_fboxOE)), colData(dxd_fboxOE)$exon)
+# Inspect the feature counts
+head(featureCounts(dxd_fboxOE), 5)
+# Inspect rowRanges
+head(rowRanges(dxd_fboxOE), 3)
+# Estimate size factors
+dxd_fboxOE = estimateSizeFactors(dxd_fboxOE)
+# Estimate dispersions
+dxd_fboxOE = estimateDispersions(dxd_fboxOE)
+# Plot dispersion estimates
+plotDispEsts(dxd_fboxOE)
+# Check the dispersion estimates
+head(dxd_fboxOE@assays@data@listData$dispersion)
+dxd_fboxOE = estimateDispersions(dxd_fboxOE)
+head(sizeFactors(dxd_fboxOE))
+head(dxd_fboxOE@assays@data$dispersion)
+summary(dxd_fboxOE)
+head(counts(dxd_fboxOE), 5)
+any(is.na(counts(dxd_fboxOE)))  # Check for NA values
+any(is.infinite(counts(dxd_fboxOE)))  # Check for Inf values
+dxd_fboxOE = estimateDispersions(dxd_fboxOE, fitType = "local")
+
+dxd_fboxOE = testForDEU(dxd_fboxOE)
+
+dxd_fboxOE = estimateExonFoldChanges(dxd_fboxOE, fitExpToVar = "condition", denominator = "Control")
+
+dxd_fboxOE1 = DEXSeqResults(dxd_fboxOE)
+
+
+dxd_fboxOE1
+
+dxd_fboxOE1_df <- as.data.frame(dxd_fboxOE1)
+
+
+dxd_fboxOE1_df_filtered <- subset(dxd_fboxOE1_df, padj < 0.05 & abs(log2fold_Curcumin_Control) > 1)
+
+
+dxd_fboxOE1_df_filtered <- dxd_fboxOE1_df_filtered[!is.na(dxd_fboxOE1_df_filtered$padj), ]
+dxd_fboxOE1_df_filtered <- dxd_fboxOE1_df_filtered[order(dxd_fboxOE1_df_filtered$log2fold_Curcumin_Control, decreasing = TRUE), ]
+
+
+dxd_fboxOE1_df_filtered$DESCRIPTION <- mapIds(org.Dm.eg.db,
+                                              keys = dxd_fboxOE1_df_filtered$groupID,
+                                              column = "GENENAME",
+                                              keytype = "FLYBASE",
+                                              multiVals = "first")
+dxd_fboxOE1_df_filtered$gene_name <- mapIds(org.Dm.eg.db,
+                                            keys = dxd_fboxOE1_df_filtered$groupID,
+                                            column = "SYMBOL",
+                                            keytype = "FLYBASE",
+                                            multiVals = "first")
+
+
+write_xlsx(dxd_fboxOE1_df_filtered, path = "DEXSeq_resultsAs0.05_Fbox_OE.xlsx")
+ncol(se1)
+str(colData(se1))
+head(colData(se1))
+
+ncol(se2)
+str(colData(se2))
+head(colData(se2))
+
+ncol(se3)
+str(colData(se3))
+head(colData(se3))
+load("path_to_your_saved_data/se1.RData")
+load("path_to_your_saved_data/se2.RData")
+load("path_to_your_saved_data/se3.RData")
+
+
+
+###Colombia############
+
+
+se3@assays@data@listData
+
+# Assign the condition factor based on your data (Curcumin and Control)
+colData(se3)$condition = factor(c("Curcumin", "Curcumin", "Curcumin", "Control", "Control", "Control"))
+
+# Assign the library type factor (paired-end)
+colData(se3)$libType = factor(c("paired-end", "paired-end", "paired-end", "paired-end", "paired-end", "paired-end"))
+# Create a DEXSeqDataSet from the summarized experiment (se3 contains both conditions)
+dxd_Col <- DEXSeqDataSetFromSE(se3, design = ~sample + exon + condition:exon)
+# Check the data
+dxd_Col
+# Check the column data
+colData(dxd_Col)
+# View the first 5 counts
+head(counts(dxd_Col), 5)
+# Split the data by exon
+split(seq_len(ncol(dxd_Col)), colData(dxd_Col)$exon)
+# Inspect the feature counts
+head(featureCounts(dxd_Col), 5)
+# Inspect rowRanges
+head(rowRanges(dxd_Col), 3)
+# Estimate size factors
+dxd_Col = estimateSizeFactors(dxd_Col)
+# Estimate dispersions
+dxd_Col = estimateDispersions(dxd_Col)
+
+
+plotDispEsts(dxd_Col)
+
+
+dxd_Col = testForDEU(dxd_Col)
+
+dxd_Col = estimateExonFoldChanges( dxd_Col, fitExpToVar="condition", denominator = "Control")
+
+dxd_Col1 = DEXSeqResults(dxd_Col)
+
+dxd_Col1
+
+dxd_Col1_df <- as.data.frame(dxd_Col1)
+
+
+dxd_Col1_df_filtered <- subset(dxd_Col1_df, padj < 0.05 & abs(log2fold_Arsenic_Control) > 1)
+
+dxd_Col1_df_filtered <- dxd_Col1_df_filtered[!is.na(dxd_Col1_df_filtered$padj), ]
+
+dxd_Col1_df_filtered <- dxd_Col1_df_filtered[order(dxd_Col1_df_filtered$log2fold_Arsenic_Control, decreasing = TRUE), ]
+
+dxd_Col1_df_filtered$DESCRIPTION <- mapIds(org.At.tair.db,
+                                           keys = dxd_Col1_df_filtered$groupID,
+                                           column = "GENENAME",
+                                           keytype = "TAIR",
+                                           multiVals = "first")
+
+dxd_Col1_df_filtered$gene_name <- mapIds(org.At.tair.db,
+                                         keys = dxd_Col1_df_filtered$groupID,
+                                         column = "SYMBOL",
+                                         keytype = "TAIR",
+                                         multiVals = "first")
+
+write_xlsx(dxd_Col1_df_filtered, path = "DEXSeq_resultsAs0.05_Col.xlsx")
+
+
+########Plotting
+
+
+#arsenic
+plotDEXSeq(dxr1, "AT1G15520", 
+           cex.axis=1, cex=1, lwd=3, FDR=0.1, 
+           legend = TRUE, expression = TRUE, splicing = TRUE)
+#colombia
+plotDEXSeq(dxd_Col1, "AT1G15520", 
+           cex.axis=1, cex=1, lwd=3, FDR=0.1, 
+           legend = TRUE,names = TRUE, expression = TRUE, splicing = TRUE)
+#KO
+plotDEXSeq(dxd_fbox1, "AT1G15520",
+           cex.axis=1, cex=1, lwd=3, FDR=0.1, 
+           legend = TRUE, names = TRUE, expression = TRUE, splicing = TRUE)
+#OE
+plotDEXSeq(dxd_fboxOE1, "AT1G15520", 
+           cex.axis=1, cex=1, lwd=3, FDR=0.1,
+           legend = TRUE, names = TRUE, expression = TRUE, splicing = TRUE)
+
+library(readxl)
+# Load your results (Modify the filename based on your file)
+df <- read_excel("DEXSeq_results_Curcumin_vs_Control.xlsx")
+# Check the first few rows of your data
+head(df)
+load("se1.RData")  # Replace with the correct path if needed
+load("se2.RData")  # Replace with the correct path if needed
+load("se3.RData")  # Replace with the correct path if needed
+# Define BAM file paths for se1, se2, se3
+bamFiles_1 <- c("TCR1_SRR28863576_Aligned.sortedByCoord.out.bam", 
+                "TCR2_SRR28863575_Aligned.sortedByCoord.out.bam", 
+                "TCR3_SRR28863574_Aligned.sortedByCoord.out.bam")
+
+bamFiles_2 <- c("CCR1_SRR28863579_Aligned.sortedByCoord.out.bam", 
+                "CCR2_SRR28863578_Aligned.sortedByCoord.out.bam", 
+                "CCR3_SRR28863577_Aligned.sortedByCoord.out.bam")
+
+bamFiles_3 <- c("TCR1_SRR28863576_Aligned.sortedByCoord.out.bam", 
+                "TCR2_SRR28863575_Aligned.sortedByCoord.out.bam", 
+                "TCR3_SRR28863574_Aligned.sortedByCoord.out.bam", 
+                "CCR1_SRR28863579_Aligned.sortedByCoord.out.bam", 
+                "CCR2_SRR28863578_Aligned.sortedByCoord.out.bam", 
+                "CCR3_SRR28863577_Aligned.sortedByCoord.out.bam")
+
+# Load the necessary libraries
+library(GenomicAlignments)
+library(DEXSeq)
+
+# Create SummarizedExperiment for each set of BAM files
+se1 <- summarizeOverlaps(features = flattenedAnnotation, 
+                         reads = BamFileList(bamFiles_1), 
+                         mode = "Union", 
+                         ignore.strand = TRUE)
+
+se2 <- summarizeOverlaps(features = flattenedAnnotation, 
+                         reads = BamFileList(bamFiles_2), 
+                         mode = "Union", 
+                         singleEnd = FALSE, 
+                         ignore.strand = TRUE)
+
+se3 <- summarizeOverlaps(features = flattenedAnnotation, 
+                         reads = BamFileList(bamFiles_3), 
+                         mode = "Union", 
+                         singleEnd = FALSE, 
+                         ignore.strand = TRUE)
