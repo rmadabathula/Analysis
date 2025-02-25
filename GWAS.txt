@@ -1,0 +1,217 @@
+library(ggplot2)
+setwd("")
+#attachement of data file
+d <- read.table("mdp_traits.txt", header = TRUE)
+#Skewness and kurtosis in R 
+install.packages("moments")
+
+library("moments")
+setwd("C:/Users/Virender Kumar/Desktop/vv")
+x<-read.delim("vv.txt") 		#if file has column of name then filter the all numerical coloum
+d<-x[2:11] 				 #[2:11] is column number 2 to 11 has numerical values
+
+skewness(d)
+Al27        Ca      Co59      Cu63      Fe56      Mg24      Mn55      Ni60	Zn66    #results
+2.2094078 0.7097882 1.2305372 0.8092237 1.2923409 1.5480919 1.1665449 1.5863508	0.7002273
+
+kurtosis(d)
+ Al27       Ca     Co59     Cu63     Fe56     Mg24     Mn55     Ni60     Zn66 		#results
+8.565218 2.870487 7.288489 4.450341 5.566296 8.688982 5.878444 6.952181 4.433668 
+
+
+# Basic histogram
+ggplot(df, aes(x=weight)) + geom_histogram()
+
+# Change colors
+ggplot(df, aes(x=weight)) + 
+  geom_histogram(color="black", fill="white")
+
+#####	Add mean line and density plot on the histogram
+# Add mean line
+geom_vline(aes(xintercept=mean(weight)),
+            color="blue", linetype="dashed", size=1)
+
+theme_void()
+d<-read.delim("1.txt")
+	##	normal distribution curve
+ggplot(d, aes(x = EarHT)) +     geom_histogram(aes(y = ..density..), bins = 20, fill = "lightblue", color = "black") +
+     stat_function(fun = dnorm, args = list(mean = mean(d$EarHT, na.rm = TRUE), sd = sd(d$EarHT, na.rm = TRUE)), 
+                   color = "red", size = 1) +
+     labs(title = "Histogram with Normal Distribution Curve",
+          x = "Value",
+          y = "Density") +
+     theme_minimal() ####if you don't want background then use theme_void() instead of theme_minimal()#
+
+#Normal Distribution with histogram and normal curve
+install.packages("rcompanion")
+library(rcompanion)
+x<- c(value)
+plotNormalHistogram( x, prob = FALSE,
+                      main = "Normal Distribution overlay on Histogram",
+                      length = 1000 )
+
+	#####	identification of correlation between trits
+ggplot(d, aes(x=EarHT, y=dpoll)) + 
+    geom_point()+
+    geom_smooth(method=lm)
+				
+
+
+###Boxplot making
+ggplot(d, aes(group, value)) + 
+geom_boxplot(aes(fill = factor(..middle..)), show.legend = FALSE) +theme_bw() + 
+theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) + theme(axis.text.x = element_text(face="bold", color="#993333", size=12, angle=50, hjust = 1)) +
+theme(text=element_text(size=14,  family="serif"))+ theme(axis.text.x.bottom = element_text(margin = margin(t = 5, b = 2)), axis.title.x = element_blank())
+
+				
+
+# FOR HORIZONTAL BOXPLOT
+ggplot(d, aes(group,OIL)) + 
+     geom_boxplot(aes(fill = factor(..middle..)), show.legend = FALSE) +theme_bw() + coord_flip() + 
+    theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) + theme(axis.text.x = element_text(face="bold", color="#993333", size=12, angle=50, hjust = 1)) +
+     theme(text=element_text(size=14,  family="serif"))+ theme(axis.text.x.bottom = element_text(margin = margin(t = 5, b = 2)), axis.title.x = element_blank()+ coord_flip())
+
+#You can use to remove background of interst 
+theme(
+    panel.background = element_blank(),  # Remove panel background
+    plot.background = element_blank(),    # Remove plot background
+    panel.grid.major = element_blank(),   # Remove major grid lines
+    panel.grid.minor = element_blank()    # Remove minor grid lines
+  )
+
+#correlation plots using ggolot2 and ggcorrplot
+library(ggplot2)
+install.packages("ggcorrplot")
+library(ggcorrplot)
+clean_data <- na.omit(data) #if your data has missing value
+
+##Statistical test###
+
+cor.test(clean_data$Header_name1, clean_data$Header_name2, method = "pearson")  
+
+cor.test(clean_data$Header_name1, clean_data$Header_name2, method="kendall")  
+
+cor.test(clean_data$Var04, clean_data$Var11, method="spearman") #non-parametric statistics
+
+
+# Calculate correlation matrix
+cor_matrix <- cor(clean_data)
+
+# Plot correlation matrix
+ggcorrplot(cor_matrix, lab = TRUE)
+
+# Calculate correlation matrix with pairwise complete observations
+cor_matrix <- cor(data, use = "pairwise.complete.obs")
+
+# Plot correlation matrix
+ggcorrplot(cor_matrix, lab = TRUE)
+
+#plot by corrplot
+library(corrplot)
+# Calculate correlation matrix with pairwise complete observations
+cor_matrix <- cor(data, use = "pairwise.complete.obs")
+
+# Plot correlation matrix
+corrplot(cor_matrix, method = "circle", type = "upper", order = "hclust", 
+         tl.col = "black", tl.srt = 45, addCoef.col = "black")
+corrplot(cor_matrix, method="number", tl.col = "black") #numbers  
+corrplot(cor_matrix, method="pie", tl.col = "black") #pie
+
+##significant correlation
+install.packages("psych")
+library(psych)
+correlation_coefficients <- cor_matrix$r	# correlation coefficient matrix
+sample_sizes <- cor_matrix$n 	 # n matrix
+p_values <- cor_matrix$p	# p value matrix
+corrplot(matrix_corr2$r[2:12,2:12],p.mat=matrix_corr2$P[2:12,2:12], sig.level= 0.05, pch=8, pch.cex = 1.5, pch.col = 1, method="shade", type="lower", cl.align.text = "c", tl.col = "black")
+
+corrplot(matrix_corr2$r[2:12,2:12],p.mat=matrix_corr2$P[2:12,2:12], sig.level= 0.01, pch=4, pch.cex = 1.5, pch.col = 1, method="circle", type="upper", cl.align.text = "c", tl.col = "black")
+
+corrplot(matrix_corr2$r[2:12,2:12],p.mat=matrix_corr2$P[2:12,2:12], sig.level= 0.05, pch=4, pch.cex = 1.5, pch.col = 1, method="circle", type="upper", cl.align.text = "c", tl.col = "black")
+
+corrplot(matrix_corr2$r[2:12,2:12],p.mat=matrix_corr2$P[2:12,2:12],  sig.level= 0.01, pch=8, pch.cex = 1.5, pch.col = 1, method="color", type="upper", cl.align.text = "c", tl.col = "black
+
+
+
+##circular manhattan plot
+install.packages("CMplot")
+library("CMplot")
+
+# if you want to use the latest version on GitHub:
+> source("https://raw.githubusercontent.com/YinLiLin/CMplot/master/R/CMplot.r")# if you want to use the latest version on GitHub:
+> source("https://raw.githubusercontent.com/YinLiLin/CMplot/master/R/CMplot.r")
+
+setwd("E:/AnalysisGWAS-PhD/Protein/PreAverage/circular")
+d<-read.delim("cir.txt")
+
+
+
+
+#####SNP-density plot
+
+CMplot(pig60K,type="p",plot.type="d",bin.size=1e6,chr.den.col=c("darkgreen", "yellow", "red"),file="jpg",memo="",dpi=300,
+    main="illumilla_60K",file.output=TRUE,verbose=TRUE,width=9,height=6)
+# users can personally set the windowsize and the min/max of legend by:
+# bin.size=1e6
+# bin.range=c(min, max)
+# memo: add a character to the output file name
+# chr.labels: change the chromosome names
+# main: change the title of the plots, for manhattan plot, if there are more than one trait, main can be
+#       assigned as a character vector containing the desired title for each trait
+# NOTE: to show the full length of each chromosome, users can manually add every chromosome with one SNP, whose
+# position equals to the length of corresponding chromosome, then assign the parameter in CMplot: CMplot(..., "chr.pos.max=TRUE").
+
+
+########Circular-Manhattan plot
+(1) Genome-wide association study(GWAS)
+
+CMplot(d, type="p", plot.type="c", outward=TRUE,multracks=TRUE,threshold=c(1e-6,1e-5),threshold.lty=c(1,2),
+       threshold.lwd=c(1,1), threshold.col=c("black","grey"), amplify=TRUE,bin.size=1e6,
+       chr.den.col=c("darkgreen", "yellow", "red"), signal.col=c("red","green","blue"),
+       signal.cex=1, file="jpg",dpi=300,file.output=TRUE,verbose=TRUE,
+     highlight.text.cex=1.4)
+
+CMplot(pig60K,type="p",plot.type="c",chr.labels=paste("Chr",c(1:18,"X","Y"),sep=""),r=0.4,cir.legend=TRUE,
+        outward=FALSE,cir.legend.col="black",cir.chr.h=1.3,chr.den.col="black",file="jpg",
+        memo="",dpi=300,file.output=TRUE,verbose=TRUE,width=10,height=10)
+
+ d<-read.delim("ON20.txt")
+CMplot(d,type="p",plot.type="c",r=0.4,col=c("grey30","grey60"),chr.labels=paste("Chr",c(1:20),sep=""),
+      threshold=c(1e-6,1e-4),cir.chr.h=1.5,amplify=TRUE,threshold.lty=c(1,2),threshold.col=c("red",
+      "blue"),signal.line=1,signal.col=c("red","green"),chr.den.col=c("darkgreen","yellow","red"),
+      bin.size=1e6,outward=TRUE,file="jpg",memo="",dpi=750,file.output=TRUE,verbose=TRUE,width=10,height=10)
+
+############add genes or SNP names around the highlighted SNPs
+
+> SNPs <- pig60K[pig60K[,5] < (0.05 / nrow(pig60K)), 1]
+> genes <- paste("GENE", 1:length(SNPs), sep="_")
+> set.seed(666666)
+> CMplot(pig60K[,c(1:3,5)], plot.type="m",LOG10=TRUE,col=c("grey30","grey60"),highlight=SNPs,
+        highlight.col=c("red","blue","green"),highlight.cex=1,highlight.pch=c(15:17), highlight.text=genes,      
+        highlight.text.col=c("red","blue","green"),threshold=0.05/nrow(pig60K),threshold.lty=2,   
+        amplify=FALSE,file="jpg",memo="",dpi=300,file.output=TRUE,verbose=TRUE,width=14,height=6)
+# Note:
+# 'highlight', 'highlight.text', 'highlight.text.xadj', 'highlight.text.yadj' could be vector or list, if it is a vector, 
+# all traits will use the same highlighted SNPs index and text, if it is a list, the length of the list should equal to the number of traits.
+# the order of 'highlight.text' must be consistent with 'highlight'
+# highlight.text.cex: value or vecter, control the size of added text
+# highlight.text.font: value or vecter, control the font of added text
+# highlight.text.xadj: value or vecter or list for multiple traits, -1, 0, 1 limited, control the position of text around the highlighted SNPs: -1(left), 0(center), 1(right)
+# highlight.text.yadj: value or vector or list for multiple traits, same as above, -1(down), 0(center), 1(up)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
