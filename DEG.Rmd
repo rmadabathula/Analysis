@@ -1,0 +1,556 @@
+---
+title: "DEG Analysis"
+author: "Ramya"
+date: "2025-03-25"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+  word_document: default
+editor_options:
+  chunk_output_type: inline
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+
+##1.Setup working directory
+
+```{r }
+setwd("C:/Users/Student/Downloads/Count_Practice/Count_Practice")
+
+```
+
+
+##2.Load Count data
+
+```{r}
+# Load library
+library(gtools)
+
+# Create a sorted list of text files
+filelist <- mixedsort(list.files(pattern = "*.txt"))
+
+# Read the count data from the file list
+data_list <- lapply(filelist, function(fn) read.delim(fn, header = FALSE, sep = "\t")[,2]) 
+
+# Combine data into a matrix
+countdata <- do.call(cbind, data_list)
+
+# Use the first column of a sample file as row names
+rownames(countdata) <- read.delim(filelist[1], header = FALSE, sep = "\t")[,1] 
+```
+
+
+##3.Polish count data
+
+```{r}
+# Assign column names based on file names
+colnames(countdata) <- sub(".count.txt", "", filelist)
+
+# Convert data to numeric 
+mode(countdata) <- "numeric"   
+
+# Remove the last 5 rows showing summary 
+countdata <- countdata[-c((nrow(countdata)-4):nrow(countdata)),]  
+
+# View the data
+head(countdata)
+tail(countdata)
+View(countdata)
+```
+
+
+##4.Generate colData
+
+```{r}
+# Extract sample names
+sample.names <- colnames(countdata) 
+
+# Create coldata table
+coldata <- data.frame(
+  name = sample.names,
+  condition = rep(c("control", "treated"), each = 2, times = 2),
+  sample = rep(c("A", "B"), each = 4)
+)  
+
+# Convert to factors (required by DESeq2)
+coldata$condition <- factor(coldata$condition)  
+coldata$sample <- factor(coldata$sample) 
+
+ # View the coldata table
+coldata   
+
+# Save the table
+write.csv(coldata, file="coldata.csv", row.names = FALSE)  
+```
+
+
+##5.Prepare DESeq2 data
+
+```{r}
+# Load library
+library(DESeq2)
+
+# Make a data frame form a matrix
+dds <- DESeqDataSetFromMatrix(
+  countData = countdata,
+  colData = coldata,
+  design = ~ condition + sample
+)
+```
+
+
+##6.Plot dispersion of genes
+
+```{r}
+# Run basic DESeq2
+dds <- DESeq(dds)
+
+# Dispersion plot
+plotDispEsts(dds, main = "Dispersion plot")
+```
+
+
+##7.Activity
+
+```{r}
+plotDispEsts(dds, main = "Dispersion Plot",
+             genecol = "yellow",
+             fitcol = "orange",
+             finalcol = "pink",
+             legend = TRUE,
+             xlab = "Normalized counts",
+             ylab = "Dispersion level",
+             log = "xy",
+             cex = 0.2)
+```
+
+
+##8.Normalization using DESeq2
+
+```{r}
+# Check the size factors calculated by geometric mean
+dds.SF <- estimateSizeFactors(dds)
+print(sizeFactors(dds.SF))
+
+# Extract the normalized counts as transcript levels
+Normalizedcount <- counts(dds.SF, normalized = T)
+head(Normalizedcount)
+
+# Save the normalized counts
+write.csv(Normalizedcount, file="Normalized_counts.csv", row.names = TRUE)
+```
+
+
+##9.Plot counts
+
+```{r}
+# Assign colors for conditions
+group.col <- c("skyblue", "orange")[coldata$condition]
+
+#Plot the log2-transformed counts before and after normalization
+png(filename = "../plot_counts.png", width = 6, height = 6, units = "in", res = 300)
+par(mfrow=c(1,2), mar = c(1, 2, 1, 1))
+boxplot(log2(counts(dds.SF, normalized=FALSE)+1),
+        xlab="log2(counts+1)", main="Raw counts", las = 1,
+        horizontal = TRUE, pch = ",", col = group.col)
+boxplot(log2(counts(dds.SF, normalized=TRUE)+1),
+        xlab="log2(normalized counts+1)", main="Normalized counts", las = 1,
+        horizontal = TRUE, pch = ",", col = group.col)
+
+# Close the graphics device
+dev.off()
+```
+
+
+##10.Sample distance examination
+
+```{r}
+# Load libraries
+library(gplots)
+library(ggplot2)
+
+# Variance-Stabilizing Transformation (VST)
+transformed_data <- vst(dds, blind = TRUE)
+
+# Calculate sample distance based on transformed data
+sampleDists <- dist( t( assay(transformed_data)))
+
+# Convert the distances into a matrix
+sampleDistMatrix <- as.matrix(sampleDists)
+```
+
+
+##11.Heatmap
+
+```{r}
+# Use a color palette.
+colours <- colorRampPalette(c("orange", "white"))(100)
+
+# Create a heatmap for the sample distance
+heatmap(
+  sampleDistMatrix,
+  Rowv = NA,   # Disable row dendrogram  
+  Colv = NA,   # Disable column dendrogram  
+  col = colours,  # Apply custom colors
+  margins = c(8, 8),  # Adjust margins  
+  main = "Sample distance"
+)
+```
+
+
+##12.Principal Component Analysis (PCA)
+
+```{r}
+# Generate PCA data
+pcaData <- plotPCA(transformed_data, intgroup = c("sample", "condition"), returnData = TRUE)
+
+# Retrieve the percentage of variance explained by PC1 and PC2
+percentVar <- round(100 * attr(pcaData, "percentVar"))
+
+# Create PCA Plot with ggplot2
+PCA <- ggplot(pcaData, aes(PC1, PC2, color = condition, shape = sample)) +
+  geom_point(size = 3, alpha = 0.8) +
+  xlab(paste0("PC1 (", percentVar[1], "%) ")) +
+  ylab(paste0("PC2 (", percentVar[2], "%) ")) +
+  theme_bw() +
+  ggtitle("PCA PLOT") + 
+  theme(plot.title = element_text(size = 9, face = "bold"),
+    legend.position = "top",
+    axis.title = element_text(size = 17),   
+    axis.text = element_text(size = 12),    
+    panel.grid.major = element_blank(),     
+    panel.grid.minor = element_blank() + 
+    scale_color_manual(values = c("skyblue", "orange"))
+  )
+
+# view the plot
+PCA
+
+# Save the PCA plot as a PNG file using ggsave.
+ggsave("../PCA_plot.png", plot = PCA, width = 5, height = 4, dpi = 300)
+```
+
+
+##13.Filtering
+
+```{r}
+# Create a copy of the dataset
+ddsFiltered <- dds
+
+# Define filtering criteria (only genes with sufficient expression (normalized counts ≥ 10) in at least 2 samples are retained.)
+filterGenes <- rowSums(counts(ddsFiltered, normalized = TRUE)>= 10)>= 2
+
+# Apply the filter to retain only genes meeting the criteria
+ddsFiltered <- ddsFiltered[filterGenes, ]
+
+# Plot dispersion after filtering
+plotDispEsts(ddsFiltered, main="Dispersion after filtering")
+```
+
+
+##14.Run DESeq function
+
+```{r}
+# Update Design Formula including interaction terms between sample and condition.
+design(ddsFiltered) <- ~sample + condition + sample:condition
+
+# Run DESeq2 for normalization, dispersion estimation, and model fitting.
+ddsFiltered <- DESeq(ddsFiltered)
+
+# Check the DESeq2 comparisons
+resultsNames(ddsFiltered)
+
+# Extract Results for Sample A
+resSampleA <- results(ddsFiltered, name = "condition_treated_vs_control")
+summary(resSampleA)
+
+# Extract Results for Sample B
+resSampleB <- results(ddsFiltered, name = "sampleB.conditiontreated")
+summary(resSampleB)
+```
+
+
+##15.Extract significant DEGs
+
+```{r}
+# Filter significant DEGs for Sample A
+sigDEGs_A <- subset(resSampleA, padj<0.05 & abs(log2FoldChange) > 1)
+sigDEGs_A
+write.csv(as.data.frame(sigDEGs_A), file = "SampleA_DEGs.csv")
+
+# Filter significant DEGs for Sample B
+sigDEGs_B <- subset(resSampleB, padj<0.05 & abs(log2FoldChange) > 1)
+sigDEGs_B
+write.csv(as.data.frame(sigDEGs_B), file = "SampleB_DEGs.csv")
+```
+
+
+##16.Volcano plot
+
+```{r}
+library(ggplot2)
+
+# Remove rows with NA in adjusted P values
+resSampleA <- resSampleA[!is.na(resSampleA$padj), ]
+
+# Prepare data for Sample A
+resSampleA$Significance <- ifelse(resSampleA$padj < 0.05 & abs(resSampleA$log2FoldChange) > 1, "Significant", "Not Significant")
+
+# Create the plot after loading ggplot2
+volcanoA <- ggplot(resSampleA, aes(x = log2FoldChange, y = -log10(padj), color = Significance)) +  
+geom_point(alpha = 0.8, size = 1.5) +  
+scale_color_manual(values = c("Significant" = "red", "Not Significant" = "gray")) +  
+labs(title = "Sample A",       
+x = "Log2 Fold Change",      
+y = "-Log10 Adjusted P-value")
+
+volcanoA
+```
+###17. Activity
+```{r}
+library(ggplot2)
+
+# Remove rows with NA in adjusted P values
+resSampleA <- resSampleA[!is.na(resSampleA$padj), ]
+
+# Categorize DEGs into Upregulated, Downregulated, and Not Significant
+resSampleA$Significance <- ifelse(resSampleA$padj < 0.05 & resSampleA$log2FoldChange > 1, "Upregulated",
+                            ifelse(resSampleA$padj < 0.05 & resSampleA$log2FoldChange < -1, "Downregulated", 
+                                   "Not Significant"))
+
+# Create the plot after loading ggplot2
+volcanoA <- ggplot(resSampleA, aes(x = log2FoldChange, y = -log10(padj), color = Significance)) +  
+  geom_point(alpha = 0.8, size = 1.8, shape = 16) +
+  scale_color_manual(values = c("Upregulated" = "red", 
+                                "Downregulated" = "blue", 
+                                "Not Significant" = "gray")) +
+  geom_vline(xintercept = c(-1, 1), linetype = "dashed", color = "black", linewidth = 0.4) + 
+  geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "black", linewidth = 0.4) +
+  labs(title = "Volcano Plot: Sample A",
+       x = expression(Log[2]~Fold~Change),
+       y = expression(-Log[10]~"Adjusted P-value"),
+       color = "Gene Regulation") +
+  theme_minimal(base_size = 14) +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    axis.title = element_text(face = "bold"),
+    axis.text = element_text(color = "black"),
+    legend.title = element_text(face = "bold"),
+    legend.position = "right",
+    panel.grid.major = element_line(color = "gray90"),
+    panel.grid.minor = element_blank()
+  )
+
+volcanoA
+ggsave("volcano_sampleA_custom.png", volcanoA, width = 8, height = 6, dpi = 300)
+```
+###18. Sample B
+```{r}
+library(ggplot2)
+
+# Remove rows with NA in adjusted P values
+resSampleB <- resSampleB[!is.na(resSampleB$padj), ]
+
+# Categorize DEGs into Upregulated, Downregulated, and Not Significant
+resSampleB$Significance <- ifelse(resSampleB$padj < 0.05 & resSampleB$log2FoldChange > 1, "Upregulated",
+                            ifelse(resSampleB$padj < 0.05 & resSampleB$log2FoldChange < -1, "Downregulated", 
+                                   "Not Significant"))
+
+# Create the plot after loading ggplot2
+volcanoB <- ggplot(resSampleB, aes(x = log2FoldChange, y = -log10(padj), color = Significance)) +  
+  geom_point(alpha = 0.8, size = 1.8, shape = 16) +
+  scale_color_manual(values = c("Upregulated" = "orange", 
+                                "Downregulated" = "red", 
+                                "Not Significant" = "gray")) +
+  geom_vline(xintercept = c(-1, 1), linetype = "dashed", color = "black", linewidth = 0.4) + 
+  geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "black", linewidth = 0.4) +
+  labs(title = "Volcano Plot: Sample B",
+       x = expression(Log[2]~Fold~Change),
+       y = expression(-Log[10]~"Adjusted P-value"),
+       color = "Gene Regulation") +
+  theme_minimal(base_size = 14) +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    axis.title = element_text(face = "bold"),
+    axis.text = element_text(color = "black"),
+    legend.title = element_text(face = "bold"),
+    legend.position = "right",
+    panel.grid.major = element_line(color = "gray"),
+    panel.grid.minor = element_blank()
+  )
+
+volcanoB
+ggsave("volcano_sampleB_custom.png", volcanoB, width = 8, height = 6, dpi = 300)
+```
+
+
+#19.Plot Specific Genes
+###Prepare normalized count data with coldata
+
+```{r}
+library(Rmisc)
+
+# Read and process normalized counts
+NormalizedCount <- read.csv("Normalized_counts.csv", row.names = 1)
+NC_t <- cbind(name = rownames(t(NormalizedCount)), t(NormalizedCount))
+
+# Load coldata and restore 'name' column
+coldata <- read.csv("coldata.csv", header = TRUE, row.names = 1)
+coldata$name <- rownames(coldata)
+
+# Merge coldata with normalized counts
+NC_col <- merge(coldata, NC_t, by = "name")
+
+# Ensure all columns from the 4th to the last are numeric
+NC_col[, 4:ncol(NC_col)] <- lapply(NC_col[, 4:ncol(NC_col)], function(x) as.numeric(as.character(x)))
+```
+
+
+###20.Summarize data for a gene
+#Plotting
+
+```{r}
+# Summarize data for an example gene, Glyma_13G122766
+Glyma_13G122766.sum <- summarySE(NC_col, measurevar = "Glyma_13G122766", groupvars = c("sample", "condition"))
+
+# Check the summary
+Glyma_13G122766.sum
+```
+
+```{r}
+# Create the plot for Glyma_13G122766
+Glyma_13G122766 <- ggplot(Glyma_13G122766.sum, aes(x = sample, y = Glyma_13G122766, fill = condition)) +
+geom_bar(position = position_dodge(), stat = "identity", color = "grey20") +
+  labs(y = "Transcript levels\n(normalized counts)", 
+       x = "Sample", 
+       title = "Glyma_13G122766") +
+  geom_errorbar(aes(ymin = Glyma_13G122766, ymax = Glyma_13G122766 + sd),
+ linewidth = 0.3, color = "grey20", width = 0.2, position = position_dodge(0.9)) +
+  scale_fill_manual(values = c("skyblue", "orange"),
+                    breaks = c("control", "treated"))
+
+# check the plot
+Glyma_13G122766
+
+# Save the plot as a PNG file
+ggsave(filename = "Glyma_13G122766.png",
+       plot = Glyma_13G122766, 
+       width = 4, height = 4, units = "in", dpi = 300)
+```
+
+###21.Activity
+
+```{r}
+# Summarize data for an example gene, Glyma_15G074200
+Glyma_15G074200.sum <- summarySE(NC_col, measurevar = "Glyma_15G074200", groupvars = c("sample", "condition"))
+
+# Check the summary
+Glyma_15G074200.sum
+
+# Create the plot for Glyma_15G074200
+Glyma_15G074200.plot <- ggplot(Glyma_15G074200.sum, aes(x = sample, y = Glyma_15G074200, fill = condition)) +
+  geom_bar(position = position_dodge(), stat = "identity", color = "black", width = 0.7) +
+  geom_errorbar(aes(ymin = Glyma_15G074200 - sd, ymax = Glyma_15G074200 + sd),
+                width = 0.2, color = "black", position = position_dodge(0.7)) +
+  labs(title = "Expression of Glyma_15G074200",
+       x = "Sample",
+       y = "Transcript levels") +
+  scale_fill_manual(values = c("control" = "green", "treated" = "red"),
+                    name = "Condition",
+                    labels = c("Control", "Infested")) +
+   theme_minimal(base_size = 14) +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    axis.title.x = element_text(face = "bold"),
+    axis.title.y = element_text(face = "bold"),
+    axis.text.x = element_text(angle = 45, hjust = 1, color = "black"),
+    axis.text.y = element_text(color = "black"),
+    legend.title = element_text(face = "bold"),
+    panel.grid.major = element_line(color = "gray"),
+    panel.grid.minor = element_blank()
+  )
+
+# check the plot
+Glyma_15G074200.plot
+
+# Save the plot as a PNG file
+ggsave(filename = "Glyma_15G074200_expression_plot.png",
+       plot = Glyma_15G074200.plot,
+       width = 5, height = 4.5, units = "in", dpi = 300)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
