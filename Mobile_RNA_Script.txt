@@ -1,0 +1,1042 @@
+###1.Build index for watermelon Charleston gray genome v2
+
+ hisat2-build WCG_genome_v2.5.fa WCG_idx
+
+###2.Aligning each sample to the index
+
+cd ~/Ramya/Mobile
+mkdir -p bam unmapped_names unmapped_fastq
+
+hisat2 -p 12 --dta -x WCG_idx \
+  -1 S10_trimmed_1.fq.gz -2 S10_trimmed_2.fq.gz \
+| samtools sort -@ 6 -o bam/S10_trimmed_vsWM.bam
+
+samtools index bam/S10_trimmed_vsWM.bam
+
+samtools view -f 12 -F 256 bam/S10_vsWM.bam \
+  | awk '{print $1}' | sort -u \
+  > unmapped_names/S10_trimmed.unmapped.names
+
+wc -l unmapped_names/S10_trimmed.unmapped.names
+
+###3.Confirm BAM+INDEX file exist
+
+ls -lh bam/S10_trimmed_vsWM.bam bam/S10_trimmed_vsWM.bam.bai
+
+###4.Check how many unmapped read IDs extracted
+
+wc -l unmapped_names/S10_trimmed.unmapped.names
+
+###5.Convert the unmapped read IDs into FASTQ (needed for BLAST later)
+
+which seqtk ----- tool necessary (if not there install)
+
+seqtk subseq S10_trimmed_1.fq.gz unmapped_names/S10_trimmed.unmapped.names > unmapped_fastq/S10_trimmed.unmapped_R1.fq
+seqtk subseq S10_trimmed_2.fq.gz unmapped_names/S10_trimmed.unmapped.names > unmapped_fastq/S10_trimmed.unmapped_R2.fq
+
+gzip -f unmapped_fastq/S10_trimmed.unmapped_R1.fq
+gzip -f unmapped_fastq/S10_trimmed.unmapped_R2.fq  (code to convert)
+
+###6.Confirm the unmapped FASTQs exist
+
+ls -lh unmapped_fastq/S10_trimmed.unmapped_R1.fq.gz unmapped_fastq/S10_trimmed.unmapped_R2.fq.gz  ----------Repeat step2 to step6 for other samples  
+
+###7. Install Blast
+
+sudo apt install ncbi-blast+
+
+###8. Create a BLAST database from Lagenaria genome (converting the Lagenaria genome FASTA into a searchable BLAST database)
+
+makeblastdb \
+-in USVL1VR-Ls_genome_v1.fa \
+-dbtype nucl \
+-out LG_db
+
+###9. Check it worked (should see database files)
+
+ls -lh LG_db.*
+
+###10. Convert unmapped reads from FASTQ to FASTA (because BLAST needs FASTA)
+
+Do one sample first (S10 Convert R1)
+seqtk seq -a unmapped_fastq/S10_trimmed.unmapped_R1.fq.gz > S10_R1.fa
+
+Convert R2
+seqtk seq -a unmapped_fastq/S10_trimmed.unmapped_R2.fq.gz > S10_R2.fa
+
+Check conversion
+
+###11. Run BLASTN for S10 unmapped reads against Lagenaria genome
+
+create the output folder
+mkdir -p blast_out
+
+BLAST S10 R1
+blastn \
+-query S10_R1.fa \
+-db LG_db \
+-out blast_out/S10_R1_vs_LG.tsv \
+-outfmt "6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore" \
+-evalue 1e-10 \
+-num_threads 12
+
+BLAST S10 R2
+blastn \
+-query S10_R2.fa \
+-db LG_db \
+-out blast_out/S10_R2_vs_LG.tsv \
+-outfmt "6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore" \
+-evalue 1e-10 \
+-num_threads 12
+
+Count number of BLAST hits
+wc -l blast_out/S10_R1_vs_LG.tsv
+wc -l blast_out/S10_R2_vs_LG.tsv
+
+###12.Biological filtering (Identity + Length)
+
+Filter S10 R1 BLAST hits
+awk '$3>=95 && $4>=50' blast_out/S10_R1_vs_LG.tsv > blast_out/S10_R1.filtered.tsv   ($3>=95 → Percent identity ≥ 95%, $4>=50 → Alignment length ≥ 50 bp)
+
+Filter S10 R2 BLAST hits
+awk '$3>=95 && $4>=50' blast_out/S10_R2_vs_LG.tsv > blast_out/S10_R2.filtered.tsv
+
+Count how many filtered alignments remain
+wc -l blast_out/S10_R1.filtered.tsv
+wc -l blast_out/S10_R2.filtered.tsv      (counts filtered BLAST hit lines (still alignments, not unique reads))
+
+###13.Count UNIQUE reads that match Lagenaria
+
+Unique read count for S10 R1
+cut -f1 blast_out/S10_R1.filtered.tsv | sort -u | wc -l
+
+Unique read count for S10 R2
+cut -f1 blast_out/S10_R2.filtered.tsv | sort -u | wc -l
+
+(Explanation:
+cut -f1 takes column 1 = qseqid (read ID)
+sort -u removes duplicates
+wc -l counts unique reads
+
+Filter applied here:
+Unique read filter (each read counted once, even if it has multiple hits))
+
+###14.Keep BEST hit per read
+
+Best hit per read for S10 R1 (This removes repetitive multi-hits and keeps only the strongest alignment per read)
+sort -k1,1 -k12,12gr blast_out/S10_R1.filtered.tsv | sort -u -k1,1 > blast_out/S10_R1.besthit.tsv
+
+(Explanation: 
+First sort groups by read ID (col 1) and sorts by bitscore (col 12) highest first
+Second sort -u -k1,1 keeps only the first (best) hit for each read 
+Filter applied here: 
+Best-hit filter: one best alignment per read (highest bitscore))
+
+Best hit per read for S10 R2
+sort -k1,1 -k12,12gr blast_out/S10_R2.filtered.tsv | sort -u -k1,1 > blast_out/S10_R2.besthit.tsv
+
+Count best-hit lines
+wc -l blast_out/S10_R1.besthit.tsv
+wc -l blast_out/S10_R2.besthit.tsv                        ---------------------------------------------step 10 to step 14 repeat for other samples
+
+###15.Rename the GFF3 file
+
+cd ~/Ramya/Mobile
+mv "USVL1VR-Ls_v1 (1).gff3" USVL1VR-Ls_v1.gff3
+
+###16.Create folders for outputs
+
+mkdir -p genes bed
+
+###17.Convert BLAST besthit.tsv → BED
+
+Run (S10 R1):
+awk 'BEGIN{OFS="\t"}{
+  chr=$2; s=$9; e=$10;
+  if(s>e){t=s;s=e;e=t}
+  print chr, s-1, e, $1
+}' blast_out/S10_R1.besthit.tsv > bed/S10_R1.bed
+
+Run (S10 R2):
+awk 'BEGIN{OFS="\t"}{
+  chr=$2; s=$9; e=$10;
+  if(s>e){t=s;s=e;e=t}
+  print chr, s-1, e, $1
+}' blast_out/S10_R2.besthit.tsv > bed/S10_R2.bed
+
+[Meaning:
+Each line becomes:
+chrom start end readID
+on the Lagenaria genome]
+
+###18.Install/check bedtools (needed to map BED → genes)
+
+Check:
+bedtools --version
+
+If not install:
+sudo apt-get update
+sudo apt-get install -y bedtools          (bedtools will tell which Lagenaria gene each BLAST hit overlaps)
+
+###19.Extract GENE features from GFF3 (one-time prep)
+
+awk '$3=="gene"' USVL1VR-Ls_v1.gff3 > genes/LG.genes_only.gff3    (Keeps only “gene” rows (removes CDS/exon/mRNA etc.), making intersection clean)
+
+###20.Map S10 BED hits to Lagenaria genes (get gene IDs)
+
+Run (S10 R1):
+bedtools intersect -a bed/S10_R1.bed -b genes/LG.genes_only.gff3 -wa -wb \
+| awk 'BEGIN{FS="\t"}{
+  attr=$13;
+  gsub(/.*ID=/,"",attr); gsub(/;.*/,"",attr);
+  print $4"\t"attr
+}' > genes/S10_R1.read_gene.tsv
+
+Run (S10 R2):
+bedtools intersect -a bed/S10_R2.bed -b genes/LG.genes_only.gff3 -wa -wb \
+| awk 'BEGIN{FS="\t"}{
+  attr=$13;
+  gsub(/.*ID=/,"",attr); gsub(/;.*/,"",attr);
+  print $4"\t"attr
+}' > genes/S10_R2.read_gene.tsv                                   
+
+(now every rootstock-like read is linked to a Lagenaria gene)
+
+###21.Make final gene list for S10 (unique genes)
+
+cut -f2 genes/S10_R1.read_gene.tsv | cat - <(cut -f2 genes/S10_R2.read_gene.tsv) | sort -u > genes/S10.genes  (This gives the unique Lagenaria genes detected in scion sample S10)
+
+Count them:
+wc -l genes/S10.genes                             -------------------------------repeat for other samples
+
+###22.Build false-positive sets (WM/WM)
+
+mkdir -p results
+
+cat genes/S4.genes genes/S5.genes genes/S6.genes | sort -u > results/FP_control.genes
+cat genes/S19.genes genes/S20.genes genes/S21.genes | sort -u > results/FP_whitefly.genes
+
+###23.Keep genes present in ≥2 heterograft replicates (WM/LG)
+
+Control:
+cat genes/S10.genes genes/S11.genes genes/S12.genes \
+| sort | uniq -c | awk '$1>=2{print $2}' \
+> results/hetero_control_rep2.genes
+
+Whitefly:
+cat genes/S25.genes genes/S26.genes genes/S27.genes \
+| sort | uniq -c | awk '$1>=2{print $2}' \
+> results/hetero_whitefly_rep2.genes
+
+###24.Subtract false positives → FINAL mobile genes
+
+Control mobile genes:
+comm -23 <(sort results/hetero_control_rep2.genes) <(sort results/FP_control.genes) \
+> results/mobile_control.genes
+
+Whitefly mobile genes:
+comm -23 <(sort results/hetero_whitefly_rep2.genes) <(sort results/FP_whitefly.genes) \
+> results/mobile_whitefly.genes
+
+###25.Count how many mobile genes
+wc -l results/hetero_control_rep2.genes results/FP_control.genes results/mobile_control.genes
+wc -l results/hetero_whitefly_rep2.genes results/FP_whitefly.genes results/mobile_whitefly.genes
+
+
+
+pipeline requirements:
+✔ Not watermelon origin
+✔ Matches rootstock genome
+✔ Not present in WM/WM
+✔ Present in ≥2 replicates
+✔ Condition specific
+
+
+
+RANKING AND INTERPRETATION
+
+###1.Make a folder to store read-support counts(will create files that tell us how many reads support each Lagenaria gene in each sample)
+
+cd ~/Ramya/Mobile
+mkdir -p counts
+
+###2.Count read support per gene for each WM/LG sample (S10,S11,S12,S25,S26,S27)
+
+for s in S10 S11 S12 S25 S26 S27
+do
+  cat genes/${s}_R1.read_gene.tsv genes/${s}_R2.read_gene.tsv \
+  | cut -f2 \
+  | sort \
+  | uniq -c \
+  | awk 'BEGIN{OFS="\t"}{print $2,$1}' \
+  > counts/${s}.gene_readcounts.tsv
+done
+
+Check output exists
+ls -lh counts/*.gene_readcounts.tsv
+head counts/S10.gene_readcounts.tsv
+
+###3.Sum read counts across CONTROL heterograft replicates (S10+S11+S12) (creates a table where each gene has total read support across all control replicates)
+
+cat counts/S10.gene_readcounts.tsv counts/S11.gene_readcounts.tsv counts/S12.gene_readcounts.tsv \
+| awk 'BEGIN{OFS="\t"}{sum[$1]+=$2} END{for(g in sum) print g,sum[g]}' \
+| sort -k2,2nr \
+> counts/control_sum_allgenes.tsv
+
+###4.Keep ONLY the FINAL mobile genes (CONTROL) and rank them
+
+awk 'NR==FNR{keep[$1]=1; next} ($1 in keep){print $0}' \
+  results/mobile_control.genes counts/control_sum_allgenes.tsv \
+| sort -k2,2nr \
+> results/mobile_control_ranked.tsv
+
+[Explanation:
+Reads your final mobile list (mobile_control.genes)
+Pulls only those genes from the big count table
+Produces a ranked list:]
+
+Check top genes:
+head -n 20 results/mobile_control_ranked.tsv
+
+###5.Sum read counts across WHITEFLY heterograft replicates (S25+S26+S27)
+
+cat counts/S25.gene_readcounts.tsv counts/S26.gene_readcounts.tsv counts/S27.gene_readcounts.tsv \
+| awk 'BEGIN{OFS="\t"}{sum[$1]+=$2} END{for(g in sum) print g,sum[g]}' \
+| sort -k2,2nr \
+> counts/whitefly_sum_allgenes.tsv
+
+###6.Keep ONLY the FINAL mobile genes (WHITEFLY) and rank them
+
+awk 'NR==FNR{keep[$1]=1; next} ($1 in keep){print $0}' \
+  results/mobile_whitefly.genes counts/whitefly_sum_allgenes.tsv \
+| sort -k2,2nr \
+> results/mobile_whitefly_ranked.tsv
+
+Top genes:
+head -n 20 results/mobile_whitefly_ranked.tsv
+
+###7.Get Whitefly-only mobile genes and rank them (helps identify stress-responsive mobile mRNAs)
+
+7A) Create shared vs condition-specific lists
+comm -12 <(sort results/mobile_control.genes) <(sort results/mobile_whitefly.genes) \
+> results/mobile_shared.genes
+
+comm -23 <(sort results/mobile_control.genes) <(sort results/mobile_whitefly.genes) \
+> results/mobile_control_only.genes
+
+comm -13 <(sort results/mobile_control.genes) <(sort results/mobile_whitefly.genes) \
+> results/mobile_whitefly_only.genes
+
+wc -l results/mobile_shared.genes results/mobile_control_only.genes results/mobile_whitefly_only.genes
+
+7B) Rank whitefly-only by read support
+awk 'NR==FNR{keep[$1]=1; next} ($1 in keep){print $0}' \
+  results/mobile_whitefly_only.genes counts/whitefly_sum_allgenes.tsv \
+| sort -k2,2nr \
+> results/mobile_whitefly_only_ranked.tsv
+
+head -n 30 results/mobile_whitefly_only_ranked.tsv
+
+###8.Create one master table file (ready for Excel)
+
+awk 'BEGIN{OFS="\t"; print "GeneID","Total_Reads","Rank","Condition"}
+{print $1,$2,NR,"Whitefly_only"}' \
+results/mobile_whitefly_only_ranked.tsv \
+> results/Mobile_Genes_Table.tsv
+
+Identification of candidate mobile mRNAs from rootstock to scion
+
+To identify putative mobile mRNAs transported from the Lagenaria rootstock into the watermelon scion, trimmed RNA-seq reads from all samples were first aligned to the watermelon reference genome to remove transcripts originating from the scion. Reads that failed to align were considered non-watermelon sequences and were extracted as candidate non-scion reads. These unmapped reads were then aligned to the Lagenaria genome using BLASTN, and reads showing high-confidence matches were retained as potential rootstock-derived transcripts. Genomic coordinates of these aligned reads were intersected with Lagenaria gene annotations to assign corresponding gene IDs. To eliminate background signals and false positives, the same analysis was performed on homograft (WM/WM) control datasets, and any Lagenaria genes detected in these controls were removed from the heterograft results. Finally, only genes detected in at least two biological replicates of heterograft samples and absent from all homograft samples were retained as high-confidence candidates. Using this stringent filtering strategy, candidate mobile mRNAs originating from the rootstock and present in the scion were identified for both control and whitefly-infested conditions.
+
+To further prioritize biologically relevant candidates, read support for each identified Lagenaria gene was quantified by counting the number of sequencing reads assigned to each gene across biological replicates. Read counts from replicate samples were summed within each condition and used to rank candidate mobile mRNAs according to total read support, allowing identification of highly abundant and reproducibly detected transcripts. Condition-specific mobile mRNAs were determined by comparing gene lists between control and whitefly-infested treatments, enabling classification of shared, control-specific, and stress-specific mobile transcripts. The highest-ranked genes based on read support were selected as strong candidate mobile mRNAs for downstream functional analysis and experimental validation.
+
+
+Correction
+
+Step 1: Make a new folder
+cd ~/Ramya/Mobile
+mkdir -p RAMMU
+cd RAMMU
+mkdir -p counts_matrix normalized_counts foldchange final_genes scripts
+
+Step 2: Go to counts_matrix folder
+cd ~/Ramya/Mobile/RAMMU/counts_matrix
+
+Step 3: Copy the count files
+cp ~/Ramya/Mobile/counts/S*.gene_readcounts.tsv .
+
+Step 4: Sort all count files by gene ID
+for f in *.tsv
+do
+  sort -k1,1 $f > sorted_$f
+done
+
+Step 5: Create one master list of all genes
+cut -f1 sorted_*.tsv | sort -u > all_genes.txt
+
+Step 6: Create the matrix header
+echo -e "GeneID\tS4\tS5\tS6\tS10\tS11\tS12\tS19\tS20\tS21\tS25\tS26\tS27" > raw_count_matrix.tsv
+
+Step 7: Build the full raw count matrix
+while read g
+do
+  printf "%s" "$g"
+
+  for s in S4 S5 S6 S10 S11 S12 S19 S20 S21 S25 S26 S27
+  do
+    v=$(grep -w "$g" sorted_${s}.gene_readcounts.tsv | cut -f2)
+    [ -z "$v" ] && v=0
+    printf "\t%s" "$v"
+  done
+
+  printf "\n"
+done < all_genes.txt >> raw_count_matrix.tsv
+
+PART 3 — NORMALIZE COUNTS IN R USING DESEQ2
+Step 8: Open R
+R
+
+Step 9: Load DESeq2
+library(DESeq2)
+
+Step 10: Read the raw count matrix
+counts <- read.table("raw_count_matrix.tsv",
+                     header = TRUE,
+                     sep = "\t",
+                     row.names = 1,
+                     check.names = FALSE)
+
+Step 11: Create sample information table
+sample_info <- data.frame(
+  row.names = colnames(counts),
+  graft = c("homo","homo","homo","hetero","hetero","hetero",
+            "homo","homo","homo","hetero","hetero","hetero"),
+  condition = c("control","control","control","control","control","control",
+                "whitefly","whitefly","whitefly","whitefly","whitefly","whitefly")
+)
+
+Step 12: Create DESeq2 dataset
+dds <- DESeqDataSetFromMatrix(
+  countData = counts,
+  colData = sample_info,
+  design = ~ condition + graft
+)
+
+Step 13: Estimate size factors
+dds <- estimateSizeFactors(dds)
+
+Step 14: Extract normalized counts
+norm_counts <- counts(dds, normalized = TRUE)
+
+Step 15: Save normalized counts
+write.table(
+  as.data.frame(norm_counts),
+  file = "normalized_counts.tsv",
+  sep = "\t",
+  quote = FALSE,
+  col.names = NA
+)
+
+PART 4 — CALCULATE FOLD CHANGE USING NORMALIZED COUNTS
+Step 16: Go to foldchange folder
+cd ~/Ramya/Mobile/RAMMU/foldchange
+mkdir -p ~/Ramya/Mobile/RAMMU/foldchange
+
+Step 17: Calculate group means and fold changes
+awk 'NR>1{
+control_homo=($2+$3+$4)/3;
+control_hetero=($5+$6+$7)/3;
+whitefly_homo=($8+$9+$10)/3;
+whitefly_hetero=($11+$12+$13)/3;
+
+control_fc=(control_hetero+0.0001)/(control_homo+0.0001);
+whitefly_fc=(whitefly_hetero+0.0001)/(whitefly_homo+0.0001);
+
+print $1"\t"control_homo"\t"control_hetero"\t"control_fc"\t"whitefly_homo"\t"whitefly_hetero"\t"whitefly_fc
+}' \
+~/Ramya/Mobile/RAMMU/normalized_counts/normalized_counts.tsv \
+> foldchange_table.tsv
+
+Step 18: Add header to foldchange table
+sed -i '1i GeneID\tcontrol_homo\tcontrol_hetero\tcontrol_FC\twhitefly_homo\twhitefly_hetero\twhitefly_FC' foldchange_table.tsv
+
+PART 5 — FILTER GENES BY 5-FOLD ENRICHMENT
+Step 19: Extract control genes with FC ≥ 5
+awk '$4 >= 5 {print $1}' foldchange_table.tsv > control_fc5.genes
+
+Step 20: Extract whitefly genes with FC ≥ 5
+awk '$7 >= 5 {print $1}' foldchange_table.tsv > whitefly_fc5.genes
+
+PART 6 — INTERSECT WITH REPLICATE-SUPPORTED GENES
+Step 21: Intersect control FC5 genes with replicate-supported genes
+grep -Ff ~/Ramya/Mobile/results/hetero_control_rep2.genes control_fc5.genes > mobile_control_fc5_rep2.genes
+
+Step 22: Intersect whitefly FC5 genes with replicate-supported genes
+grep -Ff ~/Ramya/Mobile/results/hetero_whitefly_rep2.genes whitefly_fc5.genes > mobile_whitefly_fc5_rep2.genes
+
+PART 7 — REMOVE FALSE POSITIVES
+Step 23: Remove control false positives
+grep -vFf ~/Ramya/Mobile/results/FP_control.genes mobile_control_fc5_rep2.genes > mobile_control_final.genes
+
+Step 24: Remove whitefly false positives
+grep -vFf ~/Ramya/Mobile/results/FP_whitefly.genes mobile_whitefly_fc5_rep2.genes > mobile_whitefly_final.genes
+
+
+
+In the updated workflow, I first constructed a gene-by-sample read count matrix using all homograft and heterograft samples. These counts were then normalized using DESeq2 size-factor normalization to account for differences in library size and sequencing depth across samples.
+
+Using the normalized counts, I calculated the average expression levels for homograft and heterograft groups separately for both control and whitefly conditions. Fold change was then computed as the ratio of heterograft abundance to homograft abundance.
+
+Genes showing at least a 5-fold enrichment in heterografts relative to homografts were retained as candidate mobile genes. To further improve confidence, I required that each gene be detected in at least two heterograft replicates and removed genes present in the homograft false-positive sets.
+
+The attached script implements these steps: normalization, fold-change calculation, replicate support filtering, and false-positive removal. The resulting gene lists represent high-confidence candidate mobile mRNAs under control and whitefly infestation conditions.
+
+
+Step 1 — Go to final_genes folder
+cd ~/Ramya/Mobile/RAMMU/final_genes
+
+Step 2 — Make sure the final gene lists are there
+ls
+
+Step 3 — Rank control mobile genes using normalized counts
+awk 'BEGIN{FS=OFS="\t"}
+NR==FNR {keep[$1]=1; next}
+FNR==1 {next}
+($1 in keep) {
+  mean=($5+$6+$7)/3;
+  print $1,$5,$6,$7,mean
+}' mobile_control_final.genes ../normalized_counts/normalized_counts.tsv \
+| sort -k5,5nr \
+> mobile_control_ranked_normalized.tsv
+
+Step 4 — Add header to control ranked file
+sed -i '1i GeneID\tS10\tS11\tS12\tMean_Normalized_Count' mobile_control_ranked_normalized.tsv
+
+Step 5 — Check the top control genes
+head -n 20 mobile_control_ranked_normalized.tsv
+
+Step 6 — Rank whitefly mobile genes using normalized counts
+awk 'BEGIN{FS=OFS="\t"}
+NR==FNR {keep[$1]=1; next}
+FNR==1 {next}
+($1 in keep) {
+  mean=($11+$12+$13)/3;
+  print $1,$11,$12,$13,mean
+}' mobile_whitefly_final.genes ../normalized_counts/normalized_counts.tsv \
+| sort -k5,5nr \
+> mobile_whitefly_ranked_normalized.tsv
+
+Step 7 — Add header to whitefly ranked file
+sed -i '1i GeneID\tS25\tS26\tS27\tMean_Normalized_Count' mobile_whitefly_ranked_normalized.tsv
+
+Step 8 — Check the top whitefly genes
+head -n 20 mobile_whitefly_ranked_normalized.tsv
+
+Step 9 — Count ranked genes
+wc -l mobile_control_ranked_normalized.tsv
+wc -l mobile_whitefly_ranked_normalized.tsv
+
+After obtaining the final lists of candidate mobile genes for control and whitefly conditions, the genes were ranked based on their normalized expression levels in heterograft samples. Using the DESeq2-normalized count matrix, normalized counts were extracted for each gene from the corresponding heterograft replicates. For control samples, the average normalized counts from S10, S11, and S12 were calculated, while for whitefly samples, the average normalized counts from S25, S26, and S27 were calculated. Genes were then sorted in descending order based on these mean normalized counts to prioritize the most strongly supported candidate mobile mRNAs.
+
+Some corrections need to be checked before performing the normalization and deg:
+Step 1 — Check whether count files are really raw counts
+
+Go to your counts folder:
+
+cd ~/Ramya/Mobile/counts
+
+Now check one file:
+
+head S10.gene_readcounts.tsv
+
+You should see something like:
+
+Lagenaria_gene1    5
+Lagenaria_gene2    12
+Lagenaria_gene3    1
+
+Now check whether the second column is integer only:
+
+awk '{print $2}' S10.gene_readcounts.tsv | head
+
+Then check if any count is not an integer:
+
+awk '$2 !~ /^[0-9]+$/ {print}' S10.gene_readcounts.tsv | head
+Interpretation
+
+if this prints nothing, good
+
+if it prints rows, then something is wrong
+
+Now check all files together:
+
+for f in *.gene_readcounts.tsv
+do
+  echo "Checking $f"
+  awk '$2 !~ /^[0-9]+$/ {print; exit}' "$f"
+done
+
+If no bad rows appear, then your counts are raw integer style and okay for DESeq2.
+
+Step 2 — Check whether all 12 sample files exist
+
+Run:
+
+ls S4.gene_readcounts.tsv S5.gene_readcounts.tsv S6.gene_readcounts.tsv \
+   S10.gene_readcounts.tsv S11.gene_readcounts.tsv S12.gene_readcounts.tsv \
+   S19.gene_readcounts.tsv S20.gene_readcounts.tsv S21.gene_readcounts.tsv \
+   S25.gene_readcounts.tsv S26.gene_readcounts.tsv S27.gene_readcounts.tsv
+
+If all filenames show up, good.
+
+Now check line counts:
+
+wc -l *.gene_readcounts.tsv
+
+This tells you how many genes got counted in each sample.
+
+We just want to see whether one sample is extremely different from all others.
+
+Step 3 — Check whether one read was assigned multiple times
+
+This is very important.
+
+Go to your genes folder:
+
+cd ~/Ramya/Mobile/genes
+
+Now inspect one read-to-gene file:
+
+head S10_R1.read_gene.tsv
+
+You should see something like:
+
+read123    geneA
+read124    geneB
+read125    geneA
+
+Now check whether the same read ID appears more than once in the same file:
+
+cut -f1 S10_R1.read_gene.tsv | sort | uniq -d | head
+Interpretation
+
+if this prints nothing, good
+
+if it prints read IDs, then some reads are assigned multiple times
+
+Now count how many duplicated read IDs there are:
+
+cut -f1 S10_R1.read_gene.tsv | sort | uniq -d | wc -l
+
+Do the same for R2:
+
+cut -f1 S10_R2.read_gene.tsv | sort | uniq -d | wc -l
+
+Now check all files together:
+
+for f in *_R1.read_gene.tsv *_R2.read_gene.tsv
+do
+  dups=$(cut -f1 "$f" | sort | uniq -d | wc -l)
+  echo "$f : $dups duplicated read IDs"
+done
+This is the key result
+
+if duplicated read IDs are 0 or very few, fine
+
+if duplicated read IDs are many, then one read may be counted for multiple genes, and we need to fix that before DESeq2
+
+Step 4 — Check whether counts are extremely low for too many genes
+
+Go back to counts:
+
+cd ~/Ramya/Mobile/counts
+
+Check one file:
+
+awk '$2 < 5' S10.gene_readcounts.tsv | wc -l
+awk '$2 >= 5' S10.gene_readcounts.tsv | wc -l
+
+This tells you how many genes have very low counts.
+
+Now check all files:
+
+for f in *.gene_readcounts.tsv
+do
+  low=$(awk '$2 < 5' "$f" | wc -l)
+  high=$(awk '$2 >= 5' "$f" | wc -l)
+  echo "$f  low(<5): $low  high(>=5): $high"
+done
+Interpretation
+
+If almost all genes are under 5, your data is very sparse.
+That does not mean impossible, but we will need stronger filtering before DESeq2.
+
+Step 5 — Check total counts per sample
+
+This helps us see whether one sample has too many or too few Lagenaria-supporting reads.
+
+Run:
+
+for f in *.gene_readcounts.tsv
+do
+  total=$(awk '{sum+=$2} END{print sum}' "$f")
+  echo "$f  total_counts: $total"
+done
+Interpretation
+
+We compare totals across samples.
+
+Some variation is okay.
+But if one sample has, for example:
+
+most samples = 3,000 to 6,000
+
+one sample = 50,000
+
+then that sample may be problematic or unusually enriched.
+
+Step 6 — Check whether files have exactly 2 columns
+
+Run:
+
+for f in *.gene_readcounts.tsv
+do
+  echo "Checking $f"
+  awk 'NF!=2 {print; exit}' "$f"
+done
+Interpretation
+
+if nothing prints, good
+
+if rows print, then file format is inconsistent
+
+Best order for you right now
+
+Please run these first and paste the results:
+
+A
+cd ~/Ramya/Mobile/counts
+head S10.gene_readcounts.tsv
+B
+awk '$2 !~ /^[0-9]+$/ {print}' S10.gene_readcounts.tsv | head
+C
+cd ~/Ramya/Mobile/genes
+head S10_R1.read_gene.tsv
+D
+cut -f1 S10_R1.read_gene.tsv | sort | uniq -d | wc -l
+E
+cd ~/Ramya/Mobile/counts
+for f in *.gene_readcounts.tsv
+do
+  total=$(awk '{sum+=$2} END{print sum}' "$f")
+  echo "$f  total_counts: $total"
+done
+
+Paste those outputs, and then I will tell you exactly whether your pipeline is safe to continue or what needs correction first.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Correction1: Where foldchanges were added (wrong) whole process but i did notdelete
+
+
+###Step 1 — Create a new folder
+cd ~/Ramya/Mobile
+mkdir -p results_drlee_foldchange
+
+###Step 2 — Go to counts folder
+cd ~/Ramya/Mobile/counts
+
+###Step 3 — Control homograft sum (S4 + S5 + S6)
+paste S4.gene_readcounts.tsv S5.gene_readcounts.tsv S6.gene_readcounts.tsv \
+| awk '{print $1,$2+$4+$6}' OFS="\t" \
+> ../results_drlee_foldchange/control_homograft_sum.tsv
+
+###Step 4 — Control heterograft sum (S10 + S11 + S12)
+paste S10.gene_readcounts.tsv S11.gene_readcounts.tsv S12.gene_readcounts.tsv \
+| awk '{print $1,$2+$4+$6}' OFS="\t" \
+> ../results_drlee_foldchange/control_heterograft_sum.tsv
+
+###Step 5 — Whitefly homograft sum (S19 + S20 + S21)
+paste S19.gene_readcounts.tsv S20.gene_readcounts.tsv S21.gene_readcounts.tsv \
+| awk '{print $1,$2+$4+$6}' OFS="\t" \
+> ../results_drlee_foldchange/whitefly_homograft_sum.tsv
+
+###Step 6 — Whitefly heterograft sum (S25 + S26 + S27)
+paste S25.gene_readcounts.tsv S26.gene_readcounts.tsv S27.gene_readcounts.tsv \
+| awk '{print $1,$2+$4+$6}' OFS="\t" \
+> ../results_drlee_foldchange/whitefly_heterograft_sum.tsv
+
+###Step 7 — Merge control homograft and heterograft counts
+join -a1 -a2 -e 0 -o 0,1.2,2.2 \
+<(sort control_homograft_sum.tsv) \
+<(sort control_heterograft_sum.tsv) \
+> control_homo_hetero_counts.tsv
+
+head control_homo_hetero_counts.tsv
+
+###Step 8 — Calculate control fold change
+awk '{fc=($3+0.0001)/($2+0.0001); print $1"\t"$2"\t"$3"\t"fc}' \
+control_homo_hetero_counts.tsv \
+> control_homo_hetero_foldchange.tsv
+
+###Step 9 — Filter control genes at 5-fold and 10-fold
+awk '$4 >= 5' control_homo_hetero_foldchange.tsv > control_genes_fc5.tsv
+awk '$4 >= 10' control_homo_hetero_foldchange.tsv > control_genes_fc10.tsv
+
+###Step 10 — Merge whitefly homograft and heterograft counts
+join -a1 -a2 -e 0 -o 0,1.2,2.2 \
+<(sort whitefly_homograft_sum.tsv) \
+<(sort whitefly_heterograft_sum.tsv) \
+> whitefly_homo_hetero_counts.tsv
+
+head whitefly_homo_hetero_counts.tsv
+
+###Step 11 — Calculate whitefly fold change
+awk '{fc=($3+0.0001)/($2+0.0001); print $1"\t"$2"\t"$3"\t"fc}' \
+whitefly_homo_hetero_counts.tsv \
+> whitefly_homo_hetero_foldchange.tsv
+
+###Step 12 — Filter whitefly genes at 5-fold and 10-fold
+awk '$4 >= 5' whitefly_homo_hetero_foldchange.tsv > whitefly_genes_fc5.tsv
+awk '$4 >= 10' whitefly_homo_hetero_foldchange.tsv > whitefly_genes_fc10.tsv
+
+###Step 13 — Check how many genes passed
+wc -l control_genes_fc5.tsv control_genes_fc10.tsv whitefly_genes_fc5.tsv whitefly_genes_fc10.tsv
+
+###Step 14 — Extract only gene IDs from fold-change results
+cd ~/Ramya/Mobile/results_drlee_foldchange
+
+cut -f1 control_genes_fc5.tsv > control_fc5.genes
+cut -f1 whitefly_genes_fc5.tsv > whitefly_fc5.genes
+
+###Step 15 — Intersect with replicate-supported genes
+cd ~/Ramya/Mobile/results
+
+Control:
+grep -Ff hetero_control_rep2.genes \
+~/Ramya/Mobile/results_drlee_foldchange/control_fc5.genes \
+> mobile_control_fc5_rep2.genes
+
+Whitefly:
+grep -Ff hetero_whitefly_rep2.genes \
+~/Ramya/Mobile/results_drlee_foldchange/whitefly_fc5.genes \
+> mobile_whitefly_fc5_rep2.genes
+
+###Step 16 — Remove false positives
+
+Control:
+grep -vFf FP_control.genes mobile_control_fc5_rep2.genes \
+> mobile_control_final.genes
+
+Whitefly:
+grep -vFf FP_whitefly.genes mobile_whitefly_fc5_rep2.genes \
+> mobile_whitefly_final.genes
+
+###Step 17 — Check number of final mobile genes
+wc -l mobile_control_final.genes
+wc -l mobile_whitefly_final.genes
+
+
+Summary of Analysis Performed Based on Dr. Lee’s Suggestions
+To improve the identification of mobile RNAs, an additional filtering strategy was implemented following Dr. Lee’s recommendations. The goal was to avoid losing biologically meaningful mobile RNAs that may show low background expression in homograft samples but are strongly enriched in heterografts.
+
+1. Generation of Gene-Level Read Counts for All Samples
+Gene-level read support was first quantified for each RNA-seq sample by counting the number of sequencing reads mapped to each Lagenaria gene.
+Previously, gene read counts had already been generated for the heterograft samples. To enable comparison between graft combinations, gene read counts were additionally generated for the corresponding homograft samples.
+
+As a result, gene count tables were available for all experimental samples:
+Condition	Homograft Samples	Heterograft Samples
+Control	S4, S5, S6	S10, S11, S12
+Whitefly infestation	S19, S20, S21	S25, S26, S27
+
+Each table contained the number of reads supporting each gene in that sample.
+
+2. Summation of Gene Counts Across Biological Replicates
+To obtain a robust measure of gene support under each graft condition, read counts from biological replicates were combined.
+
+Replicate counts were summed separately for:
+Control homograft samples
+Control heterograft samples
+Whitefly homograft samples
+Whitefly heterograft samples
+
+This produced four summarized gene count tables representing the total read support per gene under each graft condition.
+
+3. Calculation of Fold Change Between Heterograft and Homograft Samples
+To implement Dr. Lee’s recommendation, fold change enrichment was calculated for each gene by comparing its abundance between heterograft and homograft samples.
+
+Fold change was calculated as:
+Heterograft read count / Homograft read count
+
+This comparison was performed separately for:
+Control condition (heterograft vs control homograft)
+Whitefly condition (heterograft vs whitefly homograft)
+
+This step ensured that genes showing strong enrichment in heterografts were retained even if they exhibited low background expression in homografts.
+
+4. Application of Fold-Change Enrichment Filter
+Genes were retained only if they showed strong enrichment in heterograft samples.
+
+Two thresholds were examined:
+≥5-fold enrichment
+≥10-fold enrichment
+
+For downstream analysis, the ≥5-fold enrichment threshold was selected to retain genes showing substantial heterograft-specific signal.
+
+5. Integration with Replicate-Supported Mobile RNA Candidates
+Prior steps in the pipeline had already identified candidate mobile RNAs based on their presence in heterograft samples. To increase confidence in mobile RNA detection, only genes detected in at least two heterograft biological replicates were retained. This replicate filtering step reduces stochastic or low-confidence detections.
+
+6. Removal of False Positives Detected in Homograft Controls
+Genes detected in homograft samples were previously classified as potential false positives. These genes may arise from background mapping or endogenous gene expression rather than true RNA mobility.
+To ensure high-confidence mobile RNA detection, genes identified as false positives were removed from the candidate lists.
+
+7. Final Identification of High-Confidence Mobile RNAs
+The final set of mobile RNA candidates was defined by integrating all filtering criteria:
+
+A gene was considered a mobile RNA only if it satisfied all of the following:
+Detected in at least two heterograft replicates
+Not present in the homograft false-positive set
+Enriched in heterograft samples relative to homografts (≥5-fold)
+
+8. Final Mobile RNA Candidate Sets
+Applying these filters resulted in the following final mobile RNA candidates:
+Condition	Final Mobile RNAs
+Control	179 genes
+Whitefly infestation	340 genes
+
+These genes represent high-confidence mobile RNAs that move between graft partners.
+
+Biological Interpretation:
+The analysis revealed a larger number of mobile RNAs under whitefly infestation compared with control conditions. This suggests that biotic stress may enhance long-distance RNA mobility, potentially reflecting systemic signaling responses associated with defense mechanisms.
+
+Final Pipeline Logic
+The final mobile RNA detection workflow consisted of the following sequential filters:
+Detection of candidate mobile genes from heterograft samples
+Replicate support filtering (≥2 heterograft replicates)
+Removal of false positives detected in homografts
+Fold-change enrichment filtering (heterograft / homograft ≥5)
+
+This combined strategy improves the reliability of mobile RNA identification while preserving biologically meaningful candidates.
+
+Now the usual next analyses are:
+
+1️⃣ Shared vs condition-specific mobile RNAs
+2️⃣ GO enrichment analysis
+3️⃣ KEGG pathway enrichment
+4️⃣ Candidate gene selection for qRT-PCR
+
+
+
+Correction2: Normalization was also being done
+
+###Step 1 — Create normalization folder
+mkdir -p ~/Ramya/Mobile/results_drlee_foldchange/normalization
+
+###Step 2 — Go to normalization folder
+cd ~/Ramya/Mobile/results_drlee_foldchange/normalization
+
+###Step 3 — Copy count files there
+cp ~/Ramya/Mobile/counts/*.gene_readcounts.tsv .
+
+###Step 4 — Create DESeq2 count matrix
+paste S4.gene_readcounts.tsv S5.gene_readcounts.tsv S6.gene_readcounts.tsv \
+S10.gene_readcounts.tsv S11.gene_readcounts.tsv S12.gene_readcounts.tsv \
+S19.gene_readcounts.tsv S20.gene_readcounts.tsv S21.gene_readcounts.tsv \
+S25.gene_readcounts.tsv S26.gene_readcounts.tsv S27.gene_readcounts.tsv \
+| awk 'BEGIN{OFS="\t"} {print $1,$2,$4,$6,$8,$10,$12,$14,$16,$18,$20,$22,$24}' \
+> mobile_counts_matrix.tsv
+
+Then add header:
+sed -i '1iGeneID\tS4\tS5\tS6\tS10\tS11\tS12\tS19\tS20\tS21\tS25\tS26\tS27' mobile_counts_matrix.tsv
+
+head mobile_counts_matrix.tsv
+
+###Step 5 — Check duplicates
+cut -f1 mobile_counts_matrix.tsv | sort | uniq -d | head
+
+###Step 6 — Remove duplicate rows
+awk '!seen[$1]++' mobile_counts_matrix.tsv > mobile_counts_matrix_unique.tsv
+
+head mobile_counts_matrix_unique.tsv
+
+###Step 7 — Start R
+R
+
+###Step 8 — Read the file
+library(DESeq2)
+
+counts <- read.table(
+"mobile_counts_matrix_unique.tsv",
+header=TRUE,
+row.names=1,
+sep="\t",
+check.names=FALSE
+)
+
+head(counts)
+
+
+###Step 9 - replace all missing values with 0
+sum(is.na(counts))
+colSums(is.na(counts))
+
+counts[is.na(counts)] <- 0
+
+###Step 10 - DSEQ
+dds <- DESeqDataSetFromMatrix(
+  countData = counts,
+  colData = coldata,
+  design = ~ condition
+)
+
+dds <- estimateSizeFactors(dds)
+
+norm_counts <- counts(dds, normalized=TRUE)
+head(norm_counts)
+
+###Step 11 - Save the file
+write.table(
+  norm_counts,
+  file = "normalized_mobile_counts.tsv",
+  sep = "\t",
+  quote = FALSE,
+  col.names = NA
+)
+
+
+
+

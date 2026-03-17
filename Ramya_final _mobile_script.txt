@@ -1,0 +1,486 @@
+Some corrections need to be checked before performing the normalization and deg:
+Step 1 — Check whether count files are really raw counts
+Go to your counts folder:
+cd ~/Ramya/Mobile/counts
+
+Now check one file:
+head S10.gene_readcounts.tsv
+
+You should see something like:
+Lagenaria_gene1    5
+Lagenaria_gene2    12
+Lagenaria_gene3    1
+
+Now check whether the second column is integer only:
+awk '{print $2}' S10.gene_readcounts.tsv | head
+
+Then check if any count is not an integer:
+awk '$2 !~ /^[0-9]+$/ {print}' S10.gene_readcounts.tsv | head
+
+Interpretation:
+if this prints nothing, good
+if it prints rows, then something is wrong
+
+Now check all files together:
+for f in *.gene_readcounts.tsv
+do
+  echo "Checking $f"
+  awk '$2 !~ /^[0-9]+$/ {print; exit}' "$f"
+done
+
+If no bad rows appear, then your counts are raw integer style and okay for DESeq2.
+
+Step 2 — Check whether all 12 sample files exist
+Run:
+ls S4.gene_readcounts.tsv S5.gene_readcounts.tsv S6.gene_readcounts.tsv \
+   S10.gene_readcounts.tsv S11.gene_readcounts.tsv S12.gene_readcounts.tsv \
+   S19.gene_readcounts.tsv S20.gene_readcounts.tsv S21.gene_readcounts.tsv \
+   S25.gene_readcounts.tsv S26.gene_readcounts.tsv S27.gene_readcounts.tsv
+
+If all filenames show up, good.
+
+Now check line counts:
+wc -l *.gene_readcounts.tsv
+
+This tells you how many genes got counted in each sample. We just want to see whether one sample is extremely different from all others.
+
+Step 3 — Check whether one read was assigned multiple times
+This is very important.
+Go to your genes folder:
+cd ~/Ramya/Mobile/genes
+
+Now inspect one read-to-gene file:
+head S10_R1.read_gene.tsv
+
+You should see something like:
+read123    geneA
+read124    geneB
+read125    geneA
+
+Now check whether the same read ID appears more than once in the same file:
+cut -f1 S10_R1.read_gene.tsv | sort | uniq -d | head
+
+Interpretation:
+if this prints nothing, good
+if it prints read IDs, then some reads are assigned multiple times
+
+Now count how many duplicated read IDs there are:
+cut -f1 S10_R1.read_gene.tsv | sort | uniq -d | wc -l
+
+Do the same for R2:
+cut -f1 S10_R2.read_gene.tsv | sort | uniq -d | wc -l
+
+Now check all files together:
+for f in *_R1.read_gene.tsv *_R2.read_gene.tsv
+do
+  dups=$(cut -f1 "$f" | sort | uniq -d | wc -l)
+  echo "$f : $dups duplicated read IDs"
+done
+This is the key result
+if duplicated read IDs are 0 or very few, fine
+if duplicated read IDs are many, then one read may be counted for multiple genes, and we need to fix that before DESeq2
+
+Step 4 — Check whether counts are extremely low for too many genes
+Go back to counts:
+cd ~/Ramya/Mobile/counts
+
+Check one file:
+awk '$2 < 5' S10.gene_readcounts.tsv | wc -l
+awk '$2 >= 5' S10.gene_readcounts.tsv | wc -l
+
+This tells you how many genes have very low counts.
+
+Now check all files:
+for f in *.gene_readcounts.tsv
+do
+  low=$(awk '$2 < 5' "$f" | wc -l)
+  high=$(awk '$2 >= 5' "$f" | wc -l)
+  echo "$f  low(<5): $low  high(>=5): $high"
+done
+
+Interpretation:
+If almost all genes are under 5, your data is very sparse.
+That does not mean impossible, but we will need stronger filtering before DESeq2.
+
+Step 5 — Check total counts per sample
+This helps us see whether one sample has too many or too few Lagenaria-supporting reads.
+
+Run:
+for f in *.gene_readcounts.tsv
+do
+  total=$(awk '{sum+=$2} END{print sum}' "$f")
+  echo "$f  total_counts: $total"
+done
+
+Interpretation:
+We compare totals across samples.
+Some variation is okay.
+But if one sample has, for example:
+most samples = 3,000 to 6,000
+one sample = 50,000
+then that sample may be problematic or unusually enriched.
+
+Step 6 — Check whether files have exactly 2 columns
+Run:
+for f in *.gene_readcounts.tsv
+do
+  echo "Checking $f"
+  awk 'NF!=2 {print; exit}' "$f"
+done
+
+Interpretation:
+if nothing prints, good
+if rows print, then file format is inconsistent
+
+summary of why correction and rerun of pipeline needed:
+
+Before proceeding with normalization and differential expression analysis, several quality checks were performed on the generated gene read count files to ensure they were suitable for downstream analysis. First, the count files were inspected to confirm that they contained raw integer counts for each Lagenaria gene across all samples. While the file format itself was correct, further checks revealed a critical issue during the read-to-gene assignment stage. When examining the read_gene.tsv files, many duplicated read IDs were detected, indicating that the same unmapped read had been assigned to multiple Lagenaria genes. This occurred during the bedtools intersect step, where a single BLAST hit overlapped more than one gene region in the genome annotation, causing the read to be counted multiple times. As a result, gene-level read counts were artificially inflated and could potentially bias normalization and DEG results. Because accurate quantification requires that each read contribute only once, the pipeline was rerun from the gene-assignment stage onward with an additional filtering step to ensure that each read ID was linked to only one gene. The corrected pipeline removed duplicated read assignments, regenerated the gene lists and gene read count files, and produced cleaner count matrices suitable for normalization and differential expression analysis.
+
+
+
+Pipeline: from step1 to step19 kept same from step20 the rerunning is done
+
+###1.Build index for watermelon Charleston gray genome v2
+
+ hisat2-build WCG_genome_v2.5.fa WCG_idx
+
+###2.Aligning each sample to the index
+
+cd ~/Ramya/Mobile
+mkdir -p bam unmapped_names unmapped_fastq
+
+hisat2 -p 12 --dta -x WCG_idx \
+  -1 S10_trimmed_1.fq.gz -2 S10_trimmed_2.fq.gz \
+| samtools sort -@ 6 -o bam/S10_trimmed_vsWM.bam
+
+samtools index bam/S10_trimmed_vsWM.bam
+
+samtools view -f 12 -F 256 bam/S10_vsWM.bam \
+  | awk '{print $1}' | sort -u \
+  > unmapped_names/S10_trimmed.unmapped.names
+
+wc -l unmapped_names/S10_trimmed.unmapped.names
+
+###3.Confirm BAM+INDEX file exist
+
+ls -lh bam/S10_trimmed_vsWM.bam bam/S10_trimmed_vsWM.bam.bai
+
+###4.Check how many unmapped read IDs extracted
+
+wc -l unmapped_names/S10_trimmed.unmapped.names
+
+###5.Convert the unmapped read IDs into FASTQ (needed for BLAST later)
+
+which seqtk ----- tool necessary (if not there install)
+
+seqtk subseq S10_trimmed_1.fq.gz unmapped_names/S10_trimmed.unmapped.names > unmapped_fastq/S10_trimmed.unmapped_R1.fq
+seqtk subseq S10_trimmed_2.fq.gz unmapped_names/S10_trimmed.unmapped.names > unmapped_fastq/S10_trimmed.unmapped_R2.fq
+
+gzip -f unmapped_fastq/S10_trimmed.unmapped_R1.fq
+gzip -f unmapped_fastq/S10_trimmed.unmapped_R2.fq  (code to convert)
+
+###6.Confirm the unmapped FASTQs exist
+
+ls -lh unmapped_fastq/S10_trimmed.unmapped_R1.fq.gz unmapped_fastq/S10_trimmed.unmapped_R2.fq.gz  ----------Repeat step2 to step6 for other samples  
+
+###7. Install Blast
+
+sudo apt install ncbi-blast+
+
+###8. Create a BLAST database from Lagenaria genome (converting the Lagenaria genome FASTA into a searchable BLAST database)
+
+makeblastdb \
+-in USVL1VR-Ls_genome_v1.fa \
+-dbtype nucl \
+-out LG_db
+
+###9. Check it worked (should see database files)
+
+ls -lh LG_db.*
+
+###10. Convert unmapped reads from FASTQ to FASTA (because BLAST needs FASTA)
+
+Do one sample first (S10 Convert R1)
+seqtk seq -a unmapped_fastq/S10_trimmed.unmapped_R1.fq.gz > S10_R1.fa
+
+Convert R2
+seqtk seq -a unmapped_fastq/S10_trimmed.unmapped_R2.fq.gz > S10_R2.fa
+
+Check conversion
+
+###11. Run BLASTN for S10 unmapped reads against Lagenaria genome
+
+create the output folder
+mkdir -p blast_out
+
+BLAST S10 R1
+blastn \
+-query S10_R1.fa \
+-db LG_db \
+-out blast_out/S10_R1_vs_LG.tsv \
+-outfmt "6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore" \
+-evalue 1e-10 \
+-num_threads 12
+
+BLAST S10 R2
+blastn \
+-query S10_R2.fa \
+-db LG_db \
+-out blast_out/S10_R2_vs_LG.tsv \
+-outfmt "6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore" \
+-evalue 1e-10 \
+-num_threads 12
+
+Count number of BLAST hits
+wc -l blast_out/S10_R1_vs_LG.tsv
+wc -l blast_out/S10_R2_vs_LG.tsv
+
+###12.Biological filtering (Identity + Length)
+
+Filter S10 R1 BLAST hits
+awk '$3>=95 && $4>=50' blast_out/S10_R1_vs_LG.tsv > blast_out/S10_R1.filtered.tsv   ($3>=95 → Percent identity ≥ 95%, $4>=50 → Alignment length ≥ 50 bp)
+
+Filter S10 R2 BLAST hits
+awk '$3>=95 && $4>=50' blast_out/S10_R2_vs_LG.tsv > blast_out/S10_R2.filtered.tsv
+
+Count how many filtered alignments remain
+wc -l blast_out/S10_R1.filtered.tsv
+wc -l blast_out/S10_R2.filtered.tsv      (counts filtered BLAST hit lines (still alignments, not unique reads))
+
+###13.Count UNIQUE reads that match Lagenaria
+
+Unique read count for S10 R1
+cut -f1 blast_out/S10_R1.filtered.tsv | sort -u | wc -l
+
+Unique read count for S10 R2
+cut -f1 blast_out/S10_R2.filtered.tsv | sort -u | wc -l
+
+(Explanation:
+cut -f1 takes column 1 = qseqid (read ID)
+sort -u removes duplicates
+wc -l counts unique reads
+
+Filter applied here:
+Unique read filter (each read counted once, even if it has multiple hits))
+
+###14.Keep BEST hit per read
+
+Best hit per read for S10 R1 (This removes repetitive multi-hits and keeps only the strongest alignment per read)
+sort -k1,1 -k12,12gr blast_out/S10_R1.filtered.tsv | sort -u -k1,1 > blast_out/S10_R1.besthit.tsv
+
+(Explanation: 
+First sort groups by read ID (col 1) and sorts by bitscore (col 12) highest first
+Second sort -u -k1,1 keeps only the first (best) hit for each read 
+Filter applied here: 
+Best-hit filter: one best alignment per read (highest bitscore))
+
+Best hit per read for S10 R2
+sort -k1,1 -k12,12gr blast_out/S10_R2.filtered.tsv | sort -u -k1,1 > blast_out/S10_R2.besthit.tsv
+
+Count best-hit lines
+wc -l blast_out/S10_R1.besthit.tsv
+wc -l blast_out/S10_R2.besthit.tsv                        ---------------------------------------------step 10 to step 14 repeat for other samples
+
+###15.Rename the GFF3 file
+
+cd ~/Ramya/Mobile
+mv "USVL1VR-Ls_v1 (1).gff3" USVL1VR-Ls_v1.gff3
+
+###16.Create folders for outputs
+
+mkdir -p genes bed
+
+###17.Convert BLAST besthit.tsv → BED
+
+Run (S10 R1):
+awk 'BEGIN{OFS="\t"}{
+  chr=$2; s=$9; e=$10;
+  if(s>e){t=s;s=e;e=t}
+  print chr, s-1, e, $1
+}' blast_out/S10_R1.besthit.tsv > bed/S10_R1.bed
+
+Run (S10 R2):
+awk 'BEGIN{OFS="\t"}{
+  chr=$2; s=$9; e=$10;
+  if(s>e){t=s;s=e;e=t}
+  print chr, s-1, e, $1
+}' blast_out/S10_R2.besthit.tsv > bed/S10_R2.bed
+
+[Meaning:
+Each line becomes:
+chrom start end readID
+on the Lagenaria genome]
+
+###18.Install/check bedtools (needed to map BED → genes)
+
+Check:
+bedtools --version
+
+If not install:
+sudo apt-get update
+sudo apt-get install -y bedtools          (bedtools will tell which Lagenaria gene each BLAST hit overlaps)
+
+###19.Extract GENE features from GFF3 (one-time prep)
+
+awk '$3=="gene"' USVL1VR-Ls_v1.gff3 > genes/LG.genes_only.gff3    (Keeps only “gene” rows (removes CDS/exon/mRNA etc.), making intersection clean)
+
+
+###20.Go to your new working folder
+cd ~/Ramya/Mobile/Final_filtering
+
+ ###21.Create folders for corrected outputs
+mkdir -p bed genes counts results
+
+These will store:
+bed = corrected BED files
+genes = corrected read-to-gene and gene list files
+counts = corrected gene read counts
+results = combined result files later
+
+###22.Recreate BED files from the already filtered best-hit BLAST files (files were recreated previously and they were here: ~/Ramya/Mobile/blast_out, so they have been resued again)
+for s in S4 S5 S6 S10 S11 S12 S19 S20 S21 S25 S26 S27
+do
+  awk 'BEGIN{OFS="\t"}{
+    chr=$2; srt=$9; end=$10;
+    if(srt>end){tmp=srt; srt=end; end=tmp}
+    print chr, srt-1, end, $1
+  }' ~/Ramya/Mobile/blast_out/${s}_R1.besthit.tsv > bed/${s}_R1.bed
+
+  awk 'BEGIN{OFS="\t"}{
+    chr=$2; srt=$9; end=$10;
+    if(srt>end){tmp=srt; srt=end; end=tmp}
+    print chr, srt-1, end, $1
+  }' ~/Ramya/Mobile/blast_out/${s}_R2.besthit.tsv > bed/${s}_R2.bed
+done
+
+###23.Check BED files were created
+ls bed | head (checking their presence)
+
+ls bed/*.bed | wc -l (count them)
+
+###24.Copy or create the gene-only GFF3 file inside this corrected folder (original gff3 file is already there so directly using that : ~/Ramya/Mobile/USVL1VR-Ls_v1.gff3, this is its position)
+awk '$3=="gene"' ~/Ramya/Mobile/USVL1VR-Ls_v1.gff3 > genes/LG.genes_only.gff3
+
+###25.Map BED hits to Lagenaria genes, but keep only one gene per read (important step: main correction from previous script)
+for s in S4 S5 S6 S10 S11 S12 S19 S20 S21 S25 S26 S27
+do
+  bedtools intersect -a bed/${s}_R1.bed -b genes/LG.genes_only.gff3 -wa -wb \
+  | awk 'BEGIN{FS=OFS="\t"}{
+      attr=$13
+      gsub(/.*ID=/,"",attr)
+      gsub(/;.*/,"",attr)
+      print $4, attr
+    }' \
+  | awk '!seen[$1]++' \
+  > genes/${s}_R1.read_gene.tsv
+
+  bedtools intersect -a bed/${s}_R2.bed -b genes/LG.genes_only.gff3 -wa -wb \
+  | awk 'BEGIN{FS=OFS="\t"}{
+      attr=$13
+      gsub(/.*ID=/,"",attr)
+      gsub(/;.*/,"",attr)
+      print $4, attr
+    }' \
+  | awk '!seen[$1]++' \
+  > genes/${s}_R2.read_gene.tsv
+done
+
+What this fixes is this line from the previous script: awk '!seen[$1]++'
+so it makes sure that one read ID is kept only once, So the same read will not be counted for multiple genes anymore.
+
+###26.Check whether duplicated read IDs are removed 
+for f in genes/*_R1.read_gene.tsv genes/*_R2.read_gene.tsv
+do
+  dups=$(cut -f1 "$f" | sort | uniq -d | wc -l)
+  echo "$f : $dups duplicated read IDs"
+done
+
+###27.Make corrected unique gene list for each sample
+for s in S4 S5 S6 S10 S11 S12 S19 S20 S21 S25 S26 S27
+do
+  cat genes/${s}_R1.read_gene.tsv genes/${s}_R2.read_gene.tsv \
+  | cut -f2 \
+  | sort -u \
+  > genes/${s}.genes
+done
+
+###28.Check gene list counts
+wc -l genes/*.genes
+
+###29.Create corrected gene read count files
+for s in S4 S5 S6 S10 S11 S12 S19 S20 S21 S25 S26 S27
+do
+  cat genes/${s}_R1.read_gene.tsv genes/${s}_R2.read_gene.tsv \
+  | cut -f2 \
+  | sort \
+  | uniq -c \
+  | awk 'BEGIN{OFS="\t"}{print $2,$1}' \
+  > counts/${s}.gene_readcounts.tsv
+done
+
+###30.Check corrected count files exist
+ls counts/*.gene_readcounts.tsv | wc -l
+
+###31.Check corrected count format
+head counts/S10.gene_readcounts.tsv
+
+awk '$2 !~ /^[0-9]+$/ {print}' counts/S10.gene_readcounts.tsv | head
+
+###32.Check total counts after correction
+for f in counts/*.gene_readcounts.tsv
+do
+  total=$(awk '{sum+=$2} END{print sum}' "$f")
+  echo "$f total_counts: $total"
+done
+
+###33.Create grouped gene lists if needed
+cat genes/S4.genes genes/S5.genes genes/S6.genes | sort -u > results/FP_control.genes
+cat genes/S10.genes genes/S11.genes genes/S12.genes | sort -u > results/WP_control.genes
+cat genes/S19.genes genes/S20.genes genes/S21.genes | sort -u > results/FP_whitefly.genes
+cat genes/S25.genes genes/S26.genes genes/S27.genes | sort -u > results/WP_whitefly.genes
+
+###34.Check merged gene lists
+wc -l results/*.genes
+
+###35.Go to corrected counts folder
+cd ~/Ramya/Mobile/Final_filtering/counts
+
+ls *.gene_readcounts.tsv
+
+###36.Create a master gene list
+cut -f1 *.gene_readcounts.tsv | sort -u > all_genes.txt
+
+wc -l all_genes.txt
+
+###37.Create header for the count matrix
+echo -e "GeneID\tS4\tS5\tS6\tS10\tS11\tS12\tS19\tS20\tS21\tS25\tS26\tS27" > count_matrix.tsv
+
+###38.Build the count matrix
+while read g
+do
+  printf "%s" "$g"
+
+  for s in S4 S5 S6 S10 S11 S12 S19 S20 S21 S25 S26 S27
+  do
+    c=$(grep -w "$g" ${s}.gene_readcounts.tsv | awk '{print $2}')
+    if [ -z "$c" ]; then
+      c=0
+    fi
+    printf "\t%s" "$c"
+  done
+
+  printf "\n"
+done < all_genes.txt >> count_matrix.tsv
+
+###39.Check the matrix
+head count_matrix.tsv
+
+###40.Move matrix to results folder
+mv count_matrix.tsv ~/Ramya/Mobile/Final_filtering/results/
+
+cd ~/Ramya/Mobile/Final_filtering/results
+
+###41.Filter extremely low-count genes (this reduces noise before DESeq2)
+awk 'NR==1 || $2+$3+$4+$5+$6+$7+$8+$9+$10+$11+$12+$13 >= 10' count_matrix.tsv > count_matrix.filtered.tsv
+
+wc -l count_matrix.filtered.tsv (check number of genes retained)
