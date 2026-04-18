@@ -1,0 +1,197 @@
+# ============================================================
+# DIMs Analysis for Watermelon Grafting Metabolomics
+# Ramya - West Virginia State University
+# Comparisons: LG3 vs SS, CSB vs SS, MM30 vs SS
+# ============================================================
+
+# ---- STEP 1: Install and load required packages ----
+# Run these lines ONCE to install packages (if not already installed)
+install.packages("BiocManager")
+BiocManager::install("MetaboAnalystR")  # for OPLS-DA / VIP
+install.packages("ropls")               # alternative for OPLS-DA
+install.packages("writexl")
+install.packages("ggplot2")
+install.packages("ggrepel")
+if (!require("BiocManager", quietly = TRUE))
+  install.packages("BiocManager")
+
+BiocManager::install("ropls")
+
+library(ropls)       # for OPLS-DA and VIP scores
+library(writexl)
+library(ggplot2)
+library(ggrepel)
+
+# ---- STEP 2: Load your data ----
+setwd("C:/Users/YourName/Desktop")  # <-- CHANGE THIS to where your CSV is saved
+
+data <- read.csv("metabolites_watermelon.csv", row.names = 1, check.names = FALSE)
+
+# Preview the data
+head(data)
+dim(data)  # should be 70 rows x 12 columns
+
+# ---- STEP 3: Define sample groups ----
+SS_cols   <- c("SS_1", "SS_2", "SS_3")
+CSB_cols  <- c("CSB_1", "CSB_2", "CSB_3")
+LG3_cols  <- c("LG3_1", "LG3_2", "LG3_3")
+MM30_cols <- c("MM30_1", "MM30_2", "MM30_3")
+
+# ---- STEP 4: Define the DIM analysis function ----
+run_DIM_analysis <- function(data, group1_cols, group2_cols,
+                              group1_name, group2_name) {
+  
+  cat("\n==============================\n")
+  cat("Running:", group2_name, "vs", group1_name, "\n")
+  cat("==============================\n")
+  
+  # Subset data for the two groups
+  mat <- t(data[, c(group1_cols, group2_cols)])
+  
+  # Replace any remaining NA or NaN with 0
+  mat[is.na(mat)] <- 0
+  
+  # Add tiny pseudocount to avoid log(0)
+  mat <- mat + 0.0001
+  
+  # Group labels: group1 = reference (SS), group2 = treatment
+  group_labels <- factor(c(rep(group1_name, length(group1_cols)),
+                            rep(group2_name, length(group2_cols))))
+  
+  # ---- OPLS-DA for VIP scores ----
+  cat("Running OPLS-DA...\n")
+  oplsda_model <- tryCatch({
+    opls(mat, group_labels,
+         predI = 1, orthoI = NA,
+         permI = 200,
+         fig.pdfC = "none",
+         info.txtC = "none")
+  }, error = function(e) {
+    cat("OPLS-DA error:", conditionMessage(e), "\n")
+    return(NULL)
+  })
+  
+  if (!is.null(oplsda_model)) {
+    vip_scores <- getVipVn(oplsda_model)
+  } else {
+    cat("OPLS-DA failed, setting all VIP = NA\n")
+    vip_scores <- rep(NA, ncol(mat))
+    names(vip_scores) <- colnames(mat)
+  }
+  
+  # ---- Fold Change calculation ----
+  group1_mean <- rowMeans(t(mat)[, group1_cols, drop = FALSE])
+  group2_mean <- rowMeans(t(mat)[, group2_cols, drop = FALSE])
+  
+  fold_change <- group2_mean / group1_mean
+  log2FC     <- log2(fold_change)
+  
+  # ---- T-test (p-value) ----
+  pvalues <- sapply(rownames(data), function(metab) {
+    g1 <- as.numeric(mat[group1_cols, metab])
+    g2 <- as.numeric(mat[group2_cols, metab])
+    tryCatch(t.test(g1, g2)$p.value, error = function(e) NA)
+  })
+  
+  # ---- FDR adjustment ----
+  fdr <- p.adjust(pvalues, method = "BH")
+  
+  # ---- Direction: up or down ----
+  direction <- ifelse(log2FC > 0, "up", "down")
+  
+  # ---- Compile results table ----
+  results <- data.frame(
+    Metabolite  = rownames(data),
+    VIP         = round(vip_scores[rownames(data)], 6),
+    P_value     = round(pvalues, 6),
+    FDR         = round(fdr, 6),
+    Log2FC      = round(log2FC, 6),
+    FoldChange  = round(fold_change, 6),
+    Type        = direction,
+    stringsAsFactors = FALSE
+  )
+  
+  # ---- Filter DIMs ----
+  # Criteria: VIP > 1 AND (FC >= 2 OR FC <= 0.5) AND p-value < 0.05
+  dims <- results[
+    !is.na(results$VIP) &
+      results$VIP > 1 &
+      (results$FoldChange >= 2 | results$FoldChange <= 0.5) &
+      results$P_value < 0.05, ]
+  
+  cat("Total DIMs identified:", nrow(dims), "\n")
+  cat("  Upregulated:", sum(dims$Type == "up"), "\n")
+  cat("  Downregulated:", sum(dims$Type == "down"), "\n")
+  
+  return(list(all_results = results, DIMs = dims))
+}
+
+# ============================================================
+# STEP 5: Run analysis for all 3 comparisons
+# ============================================================
+
+LG3_vs_SS  <- run_DIM_analysis(data, SS_cols, LG3_cols,  "SS", "LG3")
+CSB_vs_SS  <- run_DIM_analysis(data, SS_cols, CSB_cols,  "SS", "CSB")
+MM30_vs_SS <- run_DIM_analysis(data, SS_cols, MM30_cols, "SS", "MM30")
+
+# ============================================================
+# STEP 6: Save results to Excel files
+# ============================================================
+
+# All metabolites results (like *_info.xlsx)
+write_xlsx(list(
+  "LG3_vs_SS_all"  = LG3_vs_SS$all_results,
+  "CSB_vs_SS_all"  = CSB_vs_SS$all_results,
+  "MM30_vs_SS_all" = MM30_vs_SS$all_results
+), "All_metabolites_results.xlsx")
+
+# DIMs only results (like *_filter.xlsx)
+write_xlsx(list(
+  "LG3_vs_SS_DIMs"  = LG3_vs_SS$DIMs,
+  "CSB_vs_SS_DIMs"  = CSB_vs_SS$DIMs,
+  "MM30_vs_SS_DIMs" = MM30_vs_SS$DIMs
+), "DIMs_filtered_results.xlsx")
+
+cat("\n✅ Excel files saved successfully!\n")
+
+# ============================================================
+# STEP 7: Volcano Plots for each comparison
+# ============================================================
+
+make_volcano <- function(results, title, output_file) {
+  
+  df <- results
+  df$label <- NA
+  
+  # Label only significant DIMs
+  sig <- df$P_value < 0.05 & (df$FoldChange >= 2 | df$FoldChange <= 0.5)
+  df$label[sig] <- df$Metabolite[sig]
+  
+  df$color <- "Not significant"
+  df$color[sig & df$Log2FC > 0] <- "Up"
+  df$color[sig & df$Log2FC < 0] <- "Down"
+  
+  p <- ggplot(df, aes(x = Log2FC, y = -log10(P_value), color = color, label = label)) +
+    geom_point(size = 2.5, alpha = 0.8) +
+    geom_text_repel(size = 3, max.overlaps = 20, na.rm = TRUE) +
+    scale_color_manual(values = c("Up" = "red", "Down" = "blue",
+                                  "Not significant" = "grey60")) +
+    geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "black") +
+    geom_vline(xintercept = c(-1, 1), linetype = "dashed", color = "black") +
+    labs(title = title,
+         x = "Log2 Fold Change",
+         y = "-log10(P-value)",
+         color = "Regulation") +
+    theme_bw(base_size = 13) +
+    theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+  
+  ggsave(output_file, plot = p, width = 8, height = 6, dpi = 300)
+  cat("Saved:", output_file, "\n")
+}
+
+make_volcano(LG3_vs_SS$all_results,  "LG3 vs SS - Volcano Plot",  "Volcano_LG3_vs_SS.png")
+make_volcano(CSB_vs_SS$all_results,  "CSB vs SS - Volcano Plot",  "Volcano_CSB_vs_SS.png")
+make_volcano(MM30_vs_SS$all_results, "MM30 vs SS - Volcano Plot", "Volcano_MM30_vs_SS.png")
+
+cat("\n✅ All volcano plots saved!\n")
+cat("\n✅ ANALYSIS COMPLETE! Check your working directory for all output files.\n")
