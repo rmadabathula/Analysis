@@ -1,0 +1,159 @@
+# ============================================================
+# DIMs Analysis - Ramya
+# ============================================================
+
+# Install package (run this line ONCE only)
+install.packages("openxlsx")
+
+library(openxlsx)
+
+# ============================================================
+# STEP 1: Load your data
+# ============================================================
+data <- read.csv("C:/Users/Student/Downloads/Karthik/metabolites_watermelon.csv", 
+                 row.names = 1, 
+                 check.names = FALSE)
+
+cat("Total metabolites loaded:", nrow(data), "\n")
+cat("Samples:", colnames(data), "\n")
+
+# ============================================================
+# STEP 2: Define groups
+# ============================================================
+SS_cols   <- c("SS_1",   "SS_2",   "SS_3")
+CSB_cols  <- c("CSB_1",  "CSB_2",  "CSB_3")
+LG3_cols  <- c("LG3_1",  "LG3_2",  "LG3_3")
+MM30_cols <- c("MM30_1", "MM30_2", "MM30_3")
+
+# ============================================================
+# STEP 3: Main function
+# ============================================================
+calculate_DIMs <- function(data, group1_cols, group2_cols, 
+                           group2_name, vip_file_path) {
+  
+  cat("\n==============================\n")
+  cat("Running:", group2_name, "vs SS\n")
+  cat("==============================\n")
+  
+  # Add small number to avoid division by zero
+  mat <- data + 0.0001
+  
+  # ---- Read VIP scores ----
+  vip_data   <- read.csv(vip_file_path, row.names = 1, header = TRUE)
+  vip_scores <- vip_data[, 1]
+  names(vip_scores) <- rownames(vip_data)
+  cat("VIP scores loaded for", length(vip_scores), "metabolites\n")
+  
+  # ---- Calculate stats for each metabolite ----
+  results <- data.frame()
+  
+  for (metab in rownames(data)) {
+    
+    g1 <- as.numeric(mat[metab, group1_cols])  # SS values
+    g2 <- as.numeric(mat[metab, group2_cols])  # Heterograft values
+    
+    fold_change <- mean(g2) / mean(g1)
+    log2fc      <- log2(fold_change)
+    pvalue      <- tryCatch(t.test(g1, g2)$p.value, error = function(e) NA)
+    vip         <- vip_scores[metab]
+    direction   <- ifelse(log2fc > 0, "up", "down")
+    
+    results <- rbind(results, data.frame(
+      Metabolite  = metab,
+      VIP         = round(as.numeric(vip), 6),
+      P_value     = round(pvalue, 6),
+      Log2FC      = round(log2fc, 6),
+      FoldChange  = round(fold_change, 6),
+      Type        = direction,
+      stringsAsFactors = FALSE
+    ))
+  }
+  
+  # ---- Filter DIMs ----
+  dims <- results[
+    !is.na(results$VIP)     & results$VIP > 1 &
+      !is.na(results$P_value) & results$P_value < 0.05 &
+      (results$FoldChange >= 2 | results$FoldChange <= 0.5), ]
+  
+  cat("DIMs found:", nrow(dims),
+      "| Up:", sum(dims$Type == "up"),
+      "| Down:", sum(dims$Type == "down"), "\n")
+  
+  return(list(all = results, dims = dims))
+}
+
+# ============================================================
+# STEP 4: Run for all 3 comparisons
+# ============================================================
+LG3  <- calculate_DIMs(data, SS_cols, LG3_cols,  "LG3",
+                       "C:/Users/Student/Downloads/Karthik/LG_VS_SS_vip.csv")
+
+CSB  <- calculate_DIMs(data, SS_cols, CSB_cols,  "CSB",
+                       "C:/Users/Student/Downloads/Karthik/CSB_VS_SS_vip.csv")
+
+MM30 <- calculate_DIMs(data, SS_cols, MM30_cols, "MM30",
+                       "C:/Users/Student/Downloads/Karthik/MM30_VS_SS_vip.csv")
+
+# ============================================================
+# STEP 5: Save to Excel
+# ============================================================
+wb <- createWorkbook()
+
+add_sheet <- function(wb, sheet_name, dims_data, comparison_name) {
+  addWorksheet(wb, sheet_name)
+  
+  writeData(wb, sheet_name,
+            data.frame(paste("DIMs -", comparison_name,
+                             "(VIP>1, FC>=2 or <=0.5, p<0.05)")),
+            startRow = 1, colNames = FALSE)
+  
+  writeData(wb, sheet_name, dims_data, startRow = 2)
+  
+  # Header style - dark blue
+  addStyle(wb, sheet_name,
+           createStyle(fgFill = "#1F4E79", fontColour = "#FFFFFF",
+                       textDecoration = "bold", halign = "center"),
+           rows = 2, cols = 1:6, gridExpand = TRUE)
+  
+  # Up rows = light red
+  up_rows <- which(dims_data$Type == "up") + 2
+  if (length(up_rows) > 0) {
+    addStyle(wb, sheet_name,
+             createStyle(fgFill = "#FFE0E0", halign = "center"),
+             rows = up_rows, cols = 1:6, gridExpand = TRUE)
+  }
+  
+  # Down rows = light blue
+  down_rows <- which(dims_data$Type == "down") + 2
+  if (length(down_rows) > 0) {
+    addStyle(wb, sheet_name,
+             createStyle(fgFill = "#E0E8FF", halign = "center"),
+             rows = down_rows, cols = 1:6, gridExpand = TRUE)
+  }
+  
+  # Column widths
+  setColWidths(wb, sheet_name, cols = 1, widths = 28)
+  setColWidths(wb, sheet_name, cols = 2:6, widths = 14)
+  
+  # Summary at bottom
+  up   <- sum(dims_data$Type == "up")
+  down <- sum(dims_data$Type == "down")
+  last <- nrow(dims_data) + 4
+  writeData(wb, sheet_name,
+            data.frame(paste("Total:", nrow(dims_data),
+                             "| Up:", up, "| Down:", down)),
+            startRow = last, colNames = FALSE)
+}
+
+# Add all 3 sheets
+add_sheet(wb, "LG3_vs_SS",  LG3$dims,  "LG3 vs SS")
+add_sheet(wb, "CSB_vs_SS",  CSB$dims,  "CSB vs SS")
+add_sheet(wb, "MM30_vs_SS", MM30$dims, "MM30 vs SS")
+
+# Save the file
+saveWorkbook(wb, 
+             "C:/Users/Student/Downloads/Karthik/DIMs_Final_Results.xlsx", 
+             overwrite = TRUE)
+
+cat("\n✅ Done! Check your Karthik folder for DIMs_Final_Results.xlsx\n")
+
