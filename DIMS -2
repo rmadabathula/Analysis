@@ -1,0 +1,196 @@
+# ============================================================
+# DIMs Analysis - Ramya
+# Separate files
+# ============================================================
+
+install.packages("openxlsx")
+library(openxlsx)
+
+# ============================================================
+# STEP 1: Load data
+# ============================================================
+data <- read.csv("C:/Users/Student/Downloads/Karthik/metabolites_watermelon.csv", 
+                 row.names = 1, 
+                 check.names = FALSE)
+
+cat("Total metabolites loaded:", nrow(data), "\n")
+
+# ============================================================
+# STEP 2: Define groups
+# ============================================================
+SS_cols   <- c("SS_1",   "SS_2",   "SS_3")
+CSB_cols  <- c("CSB_1",  "CSB_2",  "CSB_3")
+LG3_cols  <- c("LG3_1",  "LG3_2",  "LG3_3")
+MM30_cols <- c("MM30_1", "MM30_2", "MM30_3")
+
+# ============================================================
+# STEP 3: Main function
+# ============================================================
+calculate_DIMs <- function(data, group1_cols, group2_cols, 
+                           group2_name, vip_file_path) {
+  
+  cat("\n==============================\n")
+  cat("Running:", group2_name, "vs SS\n")
+  cat("==============================\n")
+  
+  mat <- data + 0.0001
+  
+  # Read VIP scores
+  vip_data   <- read.csv(vip_file_path, row.names = 1, header = TRUE)
+  vip_scores <- vip_data[, 1]
+  names(vip_scores) <- rownames(vip_data)
+  
+  # Calculate stats
+  results <- data.frame()
+  pvalues <- c()
+  
+  for (metab in rownames(data)) {
+    
+    g1 <- as.numeric(mat[metab, group1_cols])
+    g2 <- as.numeric(mat[metab, group2_cols])
+    
+    fold_change <- mean(g2) / mean(g1)
+    log2fc      <- log2(fold_change)
+    pvalue      <- tryCatch(t.test(g1, g2)$p.value, error = function(e) NA)
+    pvalues     <- c(pvalues, pvalue)
+    vip         <- as.numeric(vip_scores[metab])
+    direction   <- ifelse(log2fc > 0, "up", "down")
+    
+    results <- rbind(results, data.frame(
+      Metabolite  = metab,
+      VIP         = round(vip, 6),
+      P_value     = round(pvalue, 6),
+      FDR         = NA,           # will fill after loop
+      Log2FC      = round(log2fc, 6),
+      FoldChange  = round(fold_change, 6),
+      Type        = direction,
+      stringsAsFactors = FALSE
+    ))
+  }
+  
+  # Calculate FDR after all p-values collected
+  results$FDR <- round(p.adjust(pvalues, method = "BH"), 6)
+  
+  # ---- Filter DIMs ----
+  # VIP > 1, p < 0.05, Log2FC >= 1 or <= -1
+  dims <- results[
+    !is.na(results$VIP)     & results$VIP > 1 &
+      !is.na(results$P_value) & results$P_value < 0.05 &
+      (results$Log2FC >= 1 | results$Log2FC <= -1), ]
+  
+  cat("Total DIMs:", nrow(dims),
+      "| Up:", sum(dims$Type == "up"),
+      "| Down:", sum(dims$Type == "down"), "\n")
+  
+  return(list(all = results, dims = dims))
+}
+
+# ============================================================
+# STEP 4: Run all 3 comparisons
+# ============================================================
+LG3  <- calculate_DIMs(data, SS_cols, LG3_cols,  "LG3",
+                       "C:/Users/Student/Downloads/Karthik/LG_VS_SS_vip.csv")
+
+CSB  <- calculate_DIMs(data, SS_cols, CSB_cols,  "CSB",
+                       "C:/Users/Student/Downloads/Karthik/CSB_VS_SS_vip.csv")
+
+MM30 <- calculate_DIMs(data, SS_cols, MM30_cols, "MM30",
+                       "C:/Users/Student/Downloads/Karthik/MM30_VS_SS_vip.csv")
+
+# ============================================================
+# STEP 5: Function to save one Excel file
+# ============================================================
+save_excel <- function(data_to_save, file_path, sheet_title, 
+                       highlight_type = FALSE) {
+  
+  wb <- createWorkbook()
+  addWorksheet(wb, "Sheet1")
+  
+  # Write title
+  writeData(wb, "Sheet1",
+            data.frame(sheet_title),
+            startRow = 1, colNames = FALSE)
+  
+  # Write data
+  writeData(wb, "Sheet1", data_to_save, startRow = 2)
+  
+  # Header style
+  addStyle(wb, "Sheet1",
+           createStyle(fgFill = "#1F4E79", fontColour = "#FFFFFF",
+                       textDecoration = "bold", halign = "center"),
+           rows = 2, cols = 1:ncol(data_to_save), gridExpand = TRUE)
+  
+  # Color rows only for filtered DIMs file
+  if (highlight_type & "Type" %in% colnames(data_to_save)) {
+    
+    up_rows <- which(data_to_save$Type == "up") + 2
+    if (length(up_rows) > 0) {
+      addStyle(wb, "Sheet1",
+               createStyle(fgFill = "#FFE0E0", halign = "center"),
+               rows = up_rows, 
+               cols = 1:ncol(data_to_save), 
+               gridExpand = TRUE)
+    }
+    
+    down_rows <- which(data_to_save$Type == "down") + 2
+    if (length(down_rows) > 0) {
+      addStyle(wb, "Sheet1",
+               createStyle(fgFill = "#E0E8FF", halign = "center"),
+               rows = down_rows, 
+               cols = 1:ncol(data_to_save), 
+               gridExpand = TRUE)
+    }
+  }
+  
+  # Column widths
+  setColWidths(wb, "Sheet1", cols = 1, widths = 28)
+  setColWidths(wb, "Sheet1", cols = 2:ncol(data_to_save), widths = 14)
+  
+  saveWorkbook(wb, file_path, overwrite = TRUE)
+  cat("Saved:", file_path, "\n")
+}
+
+# ============================================================
+# STEP 6: Save separate files for each comparison
+# ============================================================
+
+# Folder path
+folder <- "C:/Users/Student/Downloads/Karthik/"
+
+# ---- LG3 vs SS ----
+save_excel(LG3$all,  
+           paste0(folder, "LG3_vs_SS_info.xlsx"),
+           "LG3 vs SS - All Metabolites (VIP, P-value, FDR, Log2FC)",
+           highlight_type = FALSE)
+
+save_excel(LG3$dims, 
+           paste0(folder, "LG3_vs_SS_filter.xlsx"),
+           "LG3 vs SS - DIMs only (VIP>1, Log2FC>=1 or <=-1, p<0.05)",
+           highlight_type = TRUE)
+
+# ---- CSB vs SS ----
+save_excel(CSB$all,  
+           paste0(folder, "CSB_vs_SS_info.xlsx"),
+           "CSB vs SS - All Metabolites (VIP, P-value, FDR, Log2FC)",
+           highlight_type = FALSE)
+
+save_excel(CSB$dims, 
+           paste0(folder, "CSB_vs_SS_filter.xlsx"),
+           "CSB vs SS - DIMs only (VIP>1, Log2FC>=1 or <=-1, p<0.05)",
+           highlight_type = TRUE)
+
+# ---- MM30 vs SS ----
+save_excel(MM30$all,  
+           paste0(folder, "MM30_vs_SS_info.xlsx"),
+           "MM30 vs SS - All Metabolites (VIP, P-value, FDR, Log2FC)",
+           highlight_type = FALSE)
+
+save_excel(MM30$dims, 
+           paste0(folder, "MM30_vs_SS_filter.xlsx"),
+           "MM30 vs SS - DIMs only (VIP>1, Log2FC>=1 or <=-1, p<0.05)",
+           highlight_type = TRUE)
+
+cat("\n✅ All 6 files saved in your Karthik folder!\n")
+cat("3 info files = all metabolites\n")
+cat("3 filter files = DIMs only\n")
+
