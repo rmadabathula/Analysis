@@ -1,0 +1,184 @@
+# ============================================================
+# Extract Arabidopsis Orthologs for Watermelon DEGs
+# One row per watermelon gene!
+# ============================================================
+
+library(openxlsx)
+
+# ============================================================
+# STEP 1: Load Orthogroups file
+# ============================================================
+cat("Loading Orthogroups file...\n")
+ortho <- read.table(
+  "C:/Users/Student/Downloads/Karthik/Orthogroups.tsv",
+  header = TRUE,
+  sep = "\t",
+  fill = TRUE,
+  quote = "",
+  stringsAsFactors = FALSE
+)
+cat("Orthogroups loaded:", nrow(ortho), "groups\n")
+
+# ============================================================
+# STEP 2: Load all 3 DEG files
+# ============================================================
+LG3_degs  <- read.csv("C:/Users/Student/Downloads/Karthik/DEGs_filtered_LG3_vs_SG.csv",
+                      stringsAsFactors = FALSE)
+CSB_degs  <- read.csv("C:/Users/Student/Downloads/Karthik/DEGs_filtered_CSB_vs_SG.csv",
+                      stringsAsFactors = FALSE)
+MM30_degs <- read.csv("C:/Users/Student/Downloads/Karthik/DEGs_filtered_MM30_vs_SG.csv",
+                      stringsAsFactors = FALSE)
+
+cat("LG3 DEGs:", nrow(LG3_degs), "\n")
+cat("CSB DEGs:", nrow(CSB_degs), "\n")
+cat("MM30 DEGs:", nrow(MM30_degs), "\n")
+
+# ============================================================
+# STEP 3: Main function - ONE ROW per watermelon gene
+# ============================================================
+find_arabidopsis_orthologs <- function(deg_data, ortho, comparison_name) {
+  
+  cat("\n==============================\n")
+  cat("Processing:", comparison_name, "\n")
+  cat("==============================\n")
+  
+  deg_genes <- deg_data$X
+  results   <- data.frame()
+  not_found <- c()
+  
+  for (gene in deg_genes) {
+    
+    gene_with_suffix <- paste0(gene, ".1")
+    found <- FALSE
+    
+    for (i in 1:nrow(ortho)) {
+      
+      watermelon_genes <- ortho$WCG_pep_v2.5[i]
+      
+      if (!is.na(watermelon_genes) & watermelon_genes != "") {
+        
+        if (grepl(gene_with_suffix, watermelon_genes, fixed = TRUE) |
+            grepl(gene, watermelon_genes, fixed = TRUE)) {
+          
+          arab_genes <- ortho$Arabidopsis_thaliana.TAIR10.pep.all[i]
+          orthogroup <- ortho$Orthogroup[i]
+          
+          if (!is.na(arab_genes) & arab_genes != "") {
+            
+            # Split multiple Arabidopsis genes
+            arab_list <- trimws(unlist(strsplit(arab_genes, ",")))
+            
+            # Clean .1 suffix
+            arab_clean_list <- gsub("\\.1$", "", arab_list)
+            
+            # ---- KEY CHANGE ----
+            # Combine ALL Arabidopsis genes into ONE cell!
+            arab_combined <- paste(arab_clean_list, collapse = ", ")
+            
+            results <- rbind(results, data.frame(
+              Watermelon_Gene    = gene,
+              Orthogroup         = orthogroup,
+              Arabidopsis_Genes  = arab_combined,
+              No_of_Orthologs    = length(arab_clean_list),
+              log2FoldChange     = deg_data$log2FoldChange[deg_data$X == gene],
+              padj               = deg_data$padj[deg_data$X == gene],
+              Annotation         = deg_data$Annotation[deg_data$X == gene],
+              stringsAsFactors   = FALSE
+            ))
+            
+          } else {
+            # No Arabidopsis ortholog in this orthogroup
+            results <- rbind(results, data.frame(
+              Watermelon_Gene    = gene,
+              Orthogroup         = orthogroup,
+              Arabidopsis_Genes  = "No Arabidopsis ortholog",
+              No_of_Orthologs    = 0,
+              log2FoldChange     = deg_data$log2FoldChange[deg_data$X == gene],
+              padj               = deg_data$padj[deg_data$X == gene],
+              Annotation         = deg_data$Annotation[deg_data$X == gene],
+              stringsAsFactors   = FALSE
+            ))
+          }
+          
+          found <- TRUE
+          break
+        }
+      }
+    }
+    
+    if (!found) {
+      not_found <- c(not_found, gene)
+      results <- rbind(results, data.frame(
+        Watermelon_Gene    = gene,
+        Orthogroup         = "NOT FOUND",
+        Arabidopsis_Genes  = "NOT FOUND",
+        No_of_Orthologs    = 0,
+        log2FoldChange     = deg_data$log2FoldChange[deg_data$X == gene],
+        padj               = deg_data$padj[deg_data$X == gene],
+        Annotation         = deg_data$Annotation[deg_data$X == gene],
+        stringsAsFactors   = FALSE
+      ))
+    }
+  }
+  
+  cat("Total DEGs processed:", nrow(deg_data), "\n")
+  cat("DEGs with Arabidopsis ortholog:",
+      sum(results$Arabidopsis_Genes != "NOT FOUND" &
+            results$Arabidopsis_Genes != "No Arabidopsis ortholog"), "\n")
+  cat("DEGs not found:", length(not_found), "\n")
+  
+  return(results)
+}
+
+# ============================================================
+# STEP 4: Run for all 3 comparisons
+# ============================================================
+cat("\nThis will take 10-15 minutes please wait!\n\n")
+
+LG3_ortho  <- find_arabidopsis_orthologs(LG3_degs,  ortho, "LG3 vs SS")
+CSB_ortho  <- find_arabidopsis_orthologs(CSB_degs,  ortho, "CSB vs SS")
+MM30_ortho <- find_arabidopsis_orthologs(MM30_degs, ortho, "MM30 vs SS")
+
+# ============================================================
+# STEP 5: Save to Excel - one row per watermelon gene
+# ============================================================
+wb <- createWorkbook()
+
+save_sheet <- function(wb, data, sheet_name) {
+  addWorksheet(wb, sheet_name)
+  writeData(wb, sheet_name, data)
+  
+  # Header style
+  addStyle(wb, sheet_name,
+           createStyle(fgFill = "#1F4E79", fontColour = "#FFFFFF",
+                       textDecoration = "bold", halign = "center"),
+           rows = 1, cols = 1:ncol(data), gridExpand = TRUE)
+  
+  # Column widths
+  setColWidths(wb, sheet_name, cols = 1, widths = 20)
+  setColWidths(wb, sheet_name, cols = 2, widths = 15)
+  setColWidths(wb, sheet_name, cols = 3, widths = 60)
+  setColWidths(wb, sheet_name, cols = 4, widths = 15)
+  setColWidths(wb, sheet_name, cols = 5:6, widths = 15)
+  setColWidths(wb, sheet_name, cols = 7, widths = 40)
+  
+  # Wrap text for Arabidopsis_Genes column
+  addStyle(wb, sheet_name,
+           createStyle(wrapText = TRUE),
+           rows = 2:(nrow(data)+1),
+           cols = 3,
+           gridExpand = TRUE)
+}
+
+save_sheet(wb, LG3_ortho,  "LG3_vs_SS")
+save_sheet(wb, CSB_ortho,  "CSB_vs_SS")
+save_sheet(wb, MM30_ortho, "MM30_vs_SS")
+
+saveWorkbook(wb,
+             "C:/Users/Student/Downloads/Karthik/DEGs_Arabidopsis_Orthologs.xlsx",
+             overwrite = TRUE)
+
+cat("\n✅ Done! File saved!\n")
+cat("Now each watermelon gene has ONE row!\n")
+cat("All Arabidopsis orthologs are in ONE cell separated by commas!\n")
+cat("Check your Karthik folder for DEGs_Arabidopsis_Orthologs.xlsx\n")
