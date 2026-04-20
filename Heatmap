@@ -69,3 +69,82 @@ pheatmap(
 dev.off()
 cat("✅ Heatmap 2 saved!\n")
 cat("\nBoth heatmaps saved in Karthik_images folder!\n")
+
+
+
+
+library(pheatmap)
+
+data <- read.csv(
+  "C:/Users/Student/Downloads/Karthik_images/Sugar metabolism genes fold change.csv",
+  header = TRUE,
+  stringsAsFactors = FALSE
+)
+
+# Use annotation names as row names instead of gene IDs!
+rownames(data) <- make.unique(data$X.1)
+
+mat <- as.matrix(data[, c("CSB", "LG.3", "MM30")])
+colnames(mat) <- c("CSB", "LG-3", "MM30")
+
+# ============================================================
+# Heatmap 3 - WITH gene names + WITH clustering
+# ============================================================
+png("C:/Users/Student/Downloads/Karthik_images/Sugar_metabolism_genenames_cluster.png",
+    width  = 2200,
+    height = 1800,
+    res    = 150)
+
+pheatmap(
+  mat,
+  color          = colorRampPalette(c("blue", "white", "red"))(100),
+  show_rownames  = TRUE,       # SHOW gene names!
+  show_colnames  = TRUE,
+  cluster_rows   = TRUE,       # WITH clustering
+  cluster_cols   = FALSE,
+  treeheight_col = 0,
+  fontsize       = 11,
+  fontsize_row   = 10,         # gene name font size
+  fontsize_col   = 14,
+  cellwidth      = 80,
+  cellheight     = 18,
+  legend         = TRUE,
+  border_color   = "grey90",
+  margins        = c(10, 20),  # more right margin for gene names
+  angle_col      = 0
+)
+
+dev.off()
+cat("✅ Heatmap 3 saved - with gene names + clustering!\n")
+
+# ============================================================
+# Heatmap 4 - WITH gene names + WITHOUT clustering
+# ============================================================
+png("C:/Users/Student/Downloads/Karthik_images/Sugar_metabolism_genenames_nocluster.png",
+    width  = 2200,
+    height = 1800,
+    res    = 150)
+
+pheatmap(
+  mat,
+  color          = colorRampPalette(c("blue", "white", "red"))(100),
+  show_rownames  = TRUE,       # SHOW gene names!
+  show_colnames  = TRUE,
+  cluster_rows   = FALSE,      # WITHOUT clustering
+  cluster_cols   = FALSE,
+  treeheight_row = 0,
+  treeheight_col = 0,
+  fontsize       = 11,
+  fontsize_row   = 10,
+  fontsize_col   = 14,
+  cellwidth      = 80,
+  cellheight     = 18,
+  legend         = TRUE,
+  border_color   = "grey90",
+  margins        = c(10, 20),
+  angle_col      = 0
+)
+
+dev.off()
+cat("✅ Heatmap 4 saved - with gene names + no clustering!\n")
+cat("\nBoth gene name heatmaps saved in Karthik_images folder!\n")
