@@ -1,0 +1,71 @@
+library(pheatmap)
+
+data <- read.csv(
+  "C:/Users/Student/Downloads/Karthik_images/Sugar metabolism genes fold change.csv",
+  header = TRUE,
+  stringsAsFactors = FALSE
+)
+
+rownames(data) <- data$X
+mat <- as.matrix(data[, c("CSB", "LG.3", "MM30")])
+colnames(mat) <- c("CSB", "LG-3", "MM30")
+
+# ============================================================
+# Heatmap 1 - WITH clustering dendrogram
+# ============================================================
+png("C:/Users/Student/Downloads/Karthik_images/Sugar_metabolism_heatmap.png",
+    width  = 1500,
+    height = 1800,
+    res    = 150)
+
+pheatmap(
+  mat,
+  color          = colorRampPalette(c("blue", "white", "red"))(100),
+  show_rownames  = FALSE,
+  show_colnames  = TRUE,
+  cluster_rows   = TRUE,
+  cluster_cols   = FALSE,
+  treeheight_col = 0,
+  fontsize       = 14,
+  fontsize_col   = 16,
+  cellwidth      = 100,
+  cellheight     = 18,
+  legend         = TRUE,
+  border_color   = "grey90",
+  margins        = c(10, 10),
+  angle_col      = 0
+)
+
+dev.off()
+cat("✅ Heatmap 1 saved!\n")
+
+# ============================================================
+# Heatmap 2 - WITHOUT clustering dendrogram
+# ============================================================
+png("C:/Users/Student/Downloads/Karthik_images/Sugar_metabolism_heatmap_nocluster.png",
+    width  = 1500,
+    height = 1800,
+    res    = 150)
+
+pheatmap(
+  mat,
+  color          = colorRampPalette(c("blue", "white", "red"))(100),
+  show_rownames  = FALSE,
+  show_colnames  = TRUE,
+  cluster_rows   = FALSE,
+  cluster_cols   = FALSE,
+  treeheight_row = 0,
+  treeheight_col = 0,
+  fontsize       = 14,
+  fontsize_col   = 16,
+  cellwidth      = 100,
+  cellheight     = 18,
+  legend         = TRUE,
+  border_color   = "grey90",
+  margins        = c(10, 10),
+  angle_col      = 0
+)
+
+dev.off()
+cat("✅ Heatmap 2 saved!\n")
+cat("\nBoth heatmaps saved in Karthik_images folder!\n")
