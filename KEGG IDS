@@ -1,0 +1,391 @@
+# ============================================================
+# Get KEGG IDs for Arabidopsis Orthologs
+# Ramya - West Virginia State University
+# ============================================================
+
+# Install if needed
+BiocManager::install("KEGGREST")
+# install.packages("openxlsx")
+
+library(KEGGREST)
+library(openxlsx)
+
+# ============================================================
+# STEP 1: Load your orthologs file
+# ============================================================
+LG3_data  <- read.xlsx(
+  "C:/Users/Student/Downloads/Karthik/DEGs_Arabidopsis_Orthologs.xlsx",
+  sheet = "LG3_vs_SS")
+
+CSB_data  <- read.xlsx(
+  "C:/Users/Student/Downloads/Karthik/DEGs_Arabidopsis_Orthologs.xlsx",
+  sheet = "CSB_vs_SS")
+
+MM30_data <- read.xlsx(
+  "C:/Users/Student/Downloads/Karthik/DEGs_Arabidopsis_Orthologs.xlsx",
+  sheet = "MM30_vs_SS")
+
+cat("LG3 rows:", nrow(LG3_data), "\n")
+cat("CSB rows:", nrow(CSB_data), "\n")
+cat("MM30 rows:", nrow(MM30_data), "\n")
+
+# ============================================================
+# STEP 2: Function to get KEGG ID for one Arabidopsis gene
+# ============================================================
+get_kegg_info <- function(arab_gene) {
+  
+  # Clean the gene ID — remove spaces and .1 suffix
+  arab_gene <- trimws(arab_gene)
+  arab_gene <- gsub("\\.\\d+$", "", arab_gene)
+  
+  # Format for KEGG: ath:AT1G15750
+  kegg_id <- paste0("ath:", arab_gene)
+  
+  tryCatch({
+    # Query KEGG
+    result <- keggGet(kegg_id)
+    
+    if (!is.null(result) && length(result) > 0) {
+      
+      # Get KO number
+      ko_numbers <- result[[1]]$ORTHOLOGY
+      if (!is.null(ko_numbers)) {
+        ko_id   <- names(ko_numbers)[1]
+        ko_name <- ko_numbers[1]
+      } else {
+        ko_id   <- "No KO"
+        ko_name <- "No KO"
+      }
+      
+      # Get pathway
+      pathways <- result[[1]]$PATHWAY
+      if (!is.null(pathways)) {
+        pathway_ids   <- paste(names(pathways), collapse = "; ")
+        pathway_names <- paste(pathways, collapse = "; ")
+      } else {
+        pathway_ids   <- "No pathway"
+        pathway_names <- "No pathway"
+      }
+      
+      return(data.frame(
+        Arabidopsis_Gene = arab_gene,
+        KO_ID            = ko_id,
+        KO_Name          = ko_name,
+        Pathway_IDs      = pathway_ids,
+        Pathway_Names    = pathway_names,
+        stringsAsFactors = FALSE
+      ))
+      
+    } else {
+      return(data.frame(
+        Arabidopsis_Gene = arab_gene,
+        KO_ID            = "NOT FOUND",
+        KO_Name          = "NOT FOUND",
+        Pathway_IDs      = "NOT FOUND",
+        Pathway_Names    = "NOT FOUND",
+        stringsAsFactors = FALSE
+      ))
+    }
+    
+  }, error = function(e) {
+    return(data.frame(
+      Arabidopsis_Gene = arab_gene,
+      KO_ID            = "ERROR",
+      KO_Name          = "ERROR",
+      Pathway_IDs      = "ERROR",
+      Pathway_Names    = "ERROR",
+      stringsAsFactors = FALSE
+    ))
+  })
+}
+
+# ============================================================
+# STEP 3: Function to process one comparison
+# ============================================================
+get_kegg_for_comparison <- function(data, comparison_name) {
+  
+  cat("\n==============================\n")
+  cat("Processing:", comparison_name, "\n")
+  cat("==============================\n")
+  
+  # Get all unique Arabidopsis genes
+  all_arab_genes <- c()
+  
+  for (arab_str in data$Arabidopsis_Genes) {
+    if (!is.na(arab_str) & 
+        arab_str != "NOT FOUND" & 
+        arab_str != "No Arabidopsis ortholog") {
+      
+      # Split comma separated genes
+      genes <- trimws(unlist(strsplit(arab_str, ",")))
+      # Clean suffixes
+      genes <- gsub("\\.\\d+$", "", genes)
+      all_arab_genes <- c(all_arab_genes, genes)
+    }
+  }
+  
+  # Remove duplicates
+  unique_genes <- unique(all_arab_genes)
+  cat("Unique Arabidopsis genes to query:", length(unique_genes), "\n")
+  cat("This will take a while - please wait!\n\n")
+  
+  # Get KEGG info for each gene
+  kegg_results <- data.frame()
+  
+  for (i in seq_along(unique_genes)) {
+    gene <- unique_genes[i]
+    
+    if (i %% 50 == 0) {
+      cat("Progress:", i, "/", length(unique_genes), "\n")
+    }
+    
+    result <- get_kegg_info(gene)
+    kegg_results <- rbind(kegg_results, result)
+    
+    # Small pause to not overload KEGG server
+    Sys.sleep(0.3)
+  }
+  
+  cat("Done! KEGG IDs retrieved:", 
+      sum(kegg_results$KO_ID != "NOT FOUND" & 
+            kegg_results$KO_ID != "ERROR"), "\n")
+  
+  return(kegg_results)
+}
+
+# ============================================================
+# STEP 4: Run for all 3 comparisons
+# ============================================================
+# NOTE: This will take a long time!
+# LG3 has ~3000 genes, MM30 has ~5000 genes
+# Start with CSB first (smallest - only 233 genes) to test!
+
+cat("Starting with CSB first (smallest) to test...\n")
+CSB_kegg <- get_kegg_for_comparison(CSB_data, "CSB vs SS")
+
+cat("\nNow processing LG3...\n")
+LG3_kegg <- get_kegg_for_comparison(LG3_data, "LG3 vs SS")
+
+cat("\nNow processing MM30 (largest - will take longest)...\n")
+MM30_kegg <- get_kegg_for_comparison(MM30_data, "MM30 vs SS")
+
+# ============================================================
+# STEP 5: Save to Excel
+# ============================================================
+wb <- createWorkbook()
+
+save_kegg_sheet <- function(wb, data, sheet_name) {
+  addWorksheet(wb, sheet_name)
+  writeData(wb, sheet_name, data)
+  
+  addStyle(wb, sheet_name,
+           createStyle(fgFill = "#1F4E79", fontColour = "#FFFFFF",
+                       textDecoration = "bold", halign = "center"),
+           rows = 1, cols = 1:ncol(data), gridExpand = TRUE)
+  
+  setColWidths(wb, sheet_name, cols = 1, widths = 20)
+  setColWidths(wb, sheet_name, cols = 2, widths = 15)
+  setColWidths(wb, sheet_name, cols = 3, widths = 30)
+  setColWidths(wb, sheet_name, cols = 4, widths = 20)
+  setColWidths(wb, sheet_name, cols = 5, widths = 50)
+}
+
+save_kegg_sheet(wb, CSB_kegg,  "CSB_vs_SS")
+save_kegg_sheet(wb, LG3_kegg,  "LG3_vs_SS")
+save_kegg_sheet(wb, MM30_kegg, "MM30_vs_SS")
+
+saveWorkbook(wb,
+             "C:/Users/Student/Downloads/Karthik/DEGs_KEGG_IDs.xlsx",
+             overwrite = TRUE)
+
+cat("\n✅ Done! Saved as DEGs_KEGG_IDs.xlsx!\n")
+
+
+
+# ============================================================
+# Get KEGG IDs for Mobile RNA Arabidopsis Orthologs
+# ============================================================
+
+library(KEGGREST)
+library(openxlsx)
+
+# ============================================================
+# STEP 1: Load mobile genes files
+# ============================================================
+M_mobile <- read.table(
+  "C:/Users/Student/Downloads/Karthik/M_mobile_final.genes",
+  header = TRUE,
+  sep = "\t",
+  fill = TRUE,
+  quote = "",
+  stringsAsFactors = FALSE
+)
+
+C_mobile <- read.table(
+  "C:/Users/Student/Downloads/Karthik/C_mobile_final.genes",
+  header = TRUE,
+  sep = "\t",
+  fill = TRUE,
+  quote = "",
+  stringsAsFactors = FALSE
+)
+
+L_mobile <- read.table(
+  "C:/Users/Student/Downloads/Karthik/L_mobile_final.genes",
+  header = TRUE,
+  sep = "\t",
+  fill = TRUE,
+  quote = "",
+  stringsAsFactors = FALSE
+)
+
+cat("MM30 mobile genes:", nrow(M_mobile), "\n")
+cat("CSB mobile genes:", nrow(C_mobile), "\n")
+cat("LG3 mobile genes:", nrow(L_mobile), "\n")
+
+# ============================================================
+# STEP 2: Function to get KEGG ID for one Arabidopsis gene
+# ============================================================
+get_kegg_info <- function(arab_gene) {
+  
+  arab_gene <- trimws(arab_gene)
+  arab_gene <- gsub("\\.\\d+$", "", arab_gene)
+  kegg_id   <- paste0("ath:", arab_gene)
+  
+  tryCatch({
+    result <- keggGet(kegg_id)
+    
+    if (!is.null(result) && length(result) > 0) {
+      
+      ko_numbers <- result[[1]]$ORTHOLOGY
+      if (!is.null(ko_numbers)) {
+        ko_id   <- names(ko_numbers)[1]
+        ko_name <- ko_numbers[1]
+      } else {
+        ko_id   <- "No KO"
+        ko_name <- "No KO"
+      }
+      
+      pathways <- result[[1]]$PATHWAY
+      if (!is.null(pathways)) {
+        pathway_ids   <- paste(names(pathways), collapse = "; ")
+        pathway_names <- paste(pathways, collapse = "; ")
+      } else {
+        pathway_ids   <- "No pathway"
+        pathway_names <- "No pathway"
+      }
+      
+      return(data.frame(
+        Arabidopsis_Gene = arab_gene,
+        KO_ID            = ko_id,
+        KO_Name          = ko_name,
+        Pathway_IDs      = pathway_ids,
+        Pathway_Names    = pathway_names,
+        stringsAsFactors = FALSE
+      ))
+      
+    } else {
+      return(data.frame(
+        Arabidopsis_Gene = arab_gene,
+        KO_ID            = "NOT FOUND",
+        KO_Name          = "NOT FOUND",
+        Pathway_IDs      = "NOT FOUND",
+        Pathway_Names    = "NOT FOUND",
+        stringsAsFactors = FALSE
+      ))
+    }
+    
+  }, error = function(e) {
+    return(data.frame(
+      Arabidopsis_Gene = arab_gene,
+      KO_ID            = "ERROR",
+      KO_Name          = "ERROR",
+      Pathway_IDs      = "ERROR",
+      Pathway_Names    = "ERROR",
+      stringsAsFactors = FALSE
+    ))
+  })
+}
+
+# ============================================================
+# STEP 3: Function to process one mobile genes file
+# ============================================================
+get_kegg_for_mobile <- function(mobile_data, comparison_name) {
+  
+  cat("\n==============================\n")
+  cat("Processing:", comparison_name, "\n")
+  cat("==============================\n")
+  
+  # Get all unique Arabidopsis genes
+  all_arab_genes <- c()
+  
+  for (arab_str in mobile_data$Arabidopsis) {
+    if (!is.na(arab_str) & arab_str != "") {
+      genes <- trimws(unlist(strsplit(arab_str, ",")))
+      genes <- gsub("\\.\\d+$", "", genes)
+      all_arab_genes <- c(all_arab_genes, genes)
+    }
+  }
+  
+  unique_genes <- unique(all_arab_genes)
+  cat("Unique Arabidopsis genes to query:", length(unique_genes), "\n")
+  cat("Please wait...\n\n")
+  
+  kegg_results <- data.frame()
+  
+  for (i in seq_along(unique_genes)) {
+    gene <- unique_genes[i]
+    
+    if (i %% 50 == 0) {
+      cat("Progress:", i, "/", length(unique_genes), "\n")
+    }
+    
+    result <- get_kegg_info(gene)
+    kegg_results <- rbind(kegg_results, result)
+    Sys.sleep(0.3)
+  }
+  
+  cat("Done! KEGG IDs retrieved:",
+      sum(kegg_results$KO_ID != "NOT FOUND" &
+            kegg_results$KO_ID != "ERROR" &
+            kegg_results$KO_ID != "No KO"), "\n")
+  
+  return(kegg_results)
+}
+
+# ============================================================
+# STEP 4: Run for all 3 mobile gene sets
+# Start with CSB (smallest - 227 genes) to test first!
+# ============================================================
+C_kegg <- get_kegg_for_mobile(C_mobile, "CSB mobile genes")
+L_kegg <- get_kegg_for_mobile(L_mobile, "LG3 mobile genes")
+M_kegg <- get_kegg_for_mobile(M_mobile, "MM30 mobile genes")
+
+# ============================================================
+# STEP 5: Save to Excel
+# ============================================================
+wb <- createWorkbook()
+
+save_sheet <- function(wb, data, sheet_name) {
+  addWorksheet(wb, sheet_name)
+  writeData(wb, sheet_name, data)
+  addStyle(wb, sheet_name,
+           createStyle(fgFill = "#1F4E79", fontColour = "#FFFFFF",
+                       textDecoration = "bold", halign = "center"),
+           rows = 1, cols = 1:ncol(data), gridExpand = TRUE)
+  setColWidths(wb, sheet_name, cols = 1, widths = 20)
+  setColWidths(wb, sheet_name, cols = 2, widths = 15)
+  setColWidths(wb, sheet_name, cols = 3, widths = 30)
+  setColWidths(wb, sheet_name, cols = 4, widths = 20)
+  setColWidths(wb, sheet_name, cols = 5, widths = 50)
+}
+
+save_sheet(wb, C_kegg, "CSB_mobile")
+save_sheet(wb, L_kegg, "LG3_mobile")
+save_sheet(wb, M_kegg, "MM30_mobile")
+
+saveWorkbook(wb,
+             "C:/Users/Student/Downloads/Karthik/Mobile_KEGG_IDs.xlsx",
+             overwrite = TRUE)
+
+cat("\n✅ Done! Saved as Mobile_KEGG_IDs.xlsx!\n")
