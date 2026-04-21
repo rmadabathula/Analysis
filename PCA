@@ -1,0 +1,652 @@
+# ============================================================
+# PCA - Watermelon Grafting RNA-seq
+# Ramya - West Virginia State University
+# ============================================================
+
+# Install if needed
+# install.packages("ggplot2")
+install.packages("ggrepel")
+
+library(ggplot2)
+library(ggrepel)
+
+# ============================================================
+# STEP 1: Load count table
+# ============================================================
+counts <- read.csv(
+  "C:/Users/Student/Downloads/Karthik_images/Wmfruit.csv",
+  row.names = 1,
+  header = TRUE,
+  check.names = FALSE
+)
+
+# ============================================================
+# STEP 2: Normalize
+# ============================================================
+counts_log    <- log2(counts + 1)
+gene_var      <- apply(counts_log, 1, var)
+counts_filtered <- counts_log[gene_var > 0, ]
+
+# ============================================================
+# STEP 3: Run PCA
+# ============================================================
+pca_result <- prcomp(
+  t(counts_filtered),
+  center = TRUE,
+  scale  = TRUE
+)
+
+variance_explained <- round(
+  (pca_result$sdev^2 / sum(pca_result$sdev^2)) * 100, 1
+)
+
+# ============================================================
+# STEP 4: Prepare data
+# ============================================================
+pca_df <- data.frame(
+  Sample = rownames(pca_result$x),
+  PC1    = pca_result$x[, 1],
+  PC2    = pca_result$x[, 2]
+)
+
+pca_df$Group <- ifelse(grepl("CSB",  pca_df$Sample), "CSB",
+                       ifelse(grepl("LG3",  pca_df$Sample), "LG-3",
+                              ifelse(grepl("MM30", pca_df$Sample), "MM30", "SS")))
+
+# Cleaner sample labels
+pca_df$Label <- gsub("CSB",  "CSB-",  pca_df$Sample)
+pca_df$Label <- gsub("LG3",  "LG3-",  pca_df$Label)
+pca_df$Label <- gsub("MM30", "MM30-", pca_df$Label)
+pca_df$Label <- gsub("SS",   "SS-",   pca_df$Label)
+
+# ============================================================
+# STEP 5: Nature-level Plot
+# ============================================================
+
+# Nature journal colors - clean and professional
+group_colors <- c(
+  "SS"   = "#1B4F72",   # deep navy blue
+  "LG-3" = "#1E8449",   # deep green
+  "CSB"  = "#BA4A00",   # deep orange/brown
+  "MM30" = "#7D3C98"    # deep purple
+)
+
+group_shapes <- c(
+  "SS"   = 21,   # filled circle
+  "LG-3" = 22,   # filled square
+  "CSB"  = 23,   # filled diamond
+  "MM30" = 24    # filled triangle up
+)
+
+# Ellipse data for each group
+library(ggplot2)
+
+p <- ggplot(pca_df, aes(x = PC1, y = PC2,
+                        fill  = Group,
+                        color = Group,
+                        shape = Group)) +
+  
+  # ---- Confidence ellipses ----
+stat_ellipse(
+  aes(color = Group),
+  type     = "norm",
+  level    = 0.95,
+  linetype = 2,
+  linewidth = 0.8,
+  fill     = NA,
+  show.legend = FALSE
+) +
+  
+  # ---- Points with white border ----
+geom_point(
+  size   = 5,
+  stroke = 1.2,
+  alpha  = 0.95
+) +
+  
+  # ---- Sample labels ----
+geom_text_repel(
+  aes(label = Sample),
+  size          = 3.5,
+  fontface      = "plain",
+  color         = "grey30",
+  box.padding   = 0.6,
+  point.padding = 0.4,
+  segment.color = "grey60",
+  segment.size  = 0.3,
+  show.legend   = FALSE,
+  max.overlaps  = 20
+) +
+  
+  # ---- Colors ----
+scale_color_manual(values = group_colors) +
+  scale_fill_manual(values  = group_colors) +
+  scale_shape_manual(values = group_shapes) +
+  
+  # ---- Axis labels ----
+labs(
+  x     = paste0("PC1 (", variance_explained[1], "% variance)"),
+  y     = paste0("PC2 (", variance_explained[2], "% variance)"),
+  color = "Graft combination",
+  fill  = "Graft combination",
+  shape = "Graft combination"
+) +
+  
+  # ---- Reference lines ----
+geom_hline(yintercept = 0, linetype = "solid",
+           color = "grey80", linewidth = 0.4) +
+  geom_vline(xintercept = 0, linetype = "solid",
+             color = "grey80", linewidth = 0.4) +
+  
+  # ---- Nature journal theme ----
+theme_classic(base_size = 14) +
+  theme(
+    # Panel
+    panel.border      = element_rect(color = "black",
+                                     fill = NA,
+                                     linewidth = 1),
+    panel.background  = element_rect(fill = "white"),
+    panel.grid.major  = element_line(color = "grey95",
+                                     linewidth = 0.3),
+    panel.grid.minor  = element_blank(),
+    
+    # Axes
+    axis.line         = element_blank(),
+    axis.title.x      = element_text(face = "bold",
+                                     size = 13,
+                                     margin = margin(t = 10)),
+    axis.title.y      = element_text(face = "bold",
+                                     size = 13,
+                                     margin = margin(r = 10)),
+    axis.text         = element_text(size = 11,
+                                     color = "black"),
+    axis.ticks        = element_line(color = "black",
+                                     linewidth = 0.5),
+    
+    # Legend
+    legend.position      = "right",
+    legend.title         = element_text(face = "bold",
+                                        size = 12),
+    legend.text          = element_text(size = 11),
+    legend.background    = element_rect(fill = "white",
+                                        color = NA),
+    legend.key           = element_rect(fill = "white"),
+    legend.box.spacing   = unit(0.3, "cm"),
+    legend.key.size      = unit(0.5, "cm"),
+    
+    # Margins
+    plot.margin = margin(20, 20, 20, 20)
+  ) +
+  
+  # ---- Force equal aspect ratio ----
+coord_fixed(ratio = 1)
+
+# ============================================================
+# STEP 6: Save at Nature journal quality
+# 300 DPI minimum for publication
+# ============================================================
+
+# Save as PNG
+ggsave(
+  "C:/Users/Student/Downloads/Karthik_images/PCA_Nature_level.png",
+  plot   = p,
+  width  = 8,
+  height = 7,
+  dpi    = 300,
+  bg     = "white"
+)
+
+# Save as PDF (vector format - best for publication!)
+ggsave(
+  "C:/Users/Student/Downloads/Karthik_images/PCA_Nature_level.pdf",
+  plot   = p,
+  width  = 8,
+  height = 7,
+  bg     = "white"
+)
+
+cat("\n✅ Nature-level PCA saved!\n")
+cat("PNG file: PCA_Nature_level.png\n")
+cat("PDF file: PCA_Nature_level.pdf (use this for submission!)\n")
+cat("Check your Karthik_images folder!\n")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+library(ggplot2)
+library(ggrepel)
+
+counts <- read.csv(
+  "C:/Users/Student/Downloads/Karthik_images/Wmfruit.csv",
+  row.names = 1,
+  header = TRUE,
+  check.names = FALSE
+)
+
+counts_log      <- log2(counts + 1)
+gene_var        <- apply(counts_log, 1, var)
+counts_filtered <- counts_log[gene_var > 0, ]
+
+pca_result <- prcomp(
+  t(counts_filtered),
+  center = TRUE,
+  scale  = TRUE
+)
+
+variance_explained <- round(
+  (pca_result$sdev^2 / sum(pca_result$sdev^2)) * 100, 1
+)
+
+pca_df <- data.frame(
+  Sample = rownames(pca_result$x),
+  PC1    = pca_result$x[, 1],
+  PC2    = pca_result$x[, 2]
+)
+
+pca_df$Group <- ifelse(grepl("CSB",  pca_df$Sample), "CSB",
+                       ifelse(grepl("LG3",  pca_df$Sample), "LG-3",
+                              ifelse(grepl("MM30", pca_df$Sample), "MM30", "SS")))
+
+pca_df$Label <- pca_df$Sample
+pca_df$Label <- gsub("CSB",  "CSB-",  pca_df$Label)
+pca_df$Label <- gsub("LG3",  "LG3-",  pca_df$Label)
+pca_df$Label <- gsub("MM30", "MM30-", pca_df$Label)
+pca_df$Label <- gsub("SS",   "SS-",   pca_df$Label)
+
+group_colors <- c(
+  "SS"   = "#1B4F72",
+  "LG-3" = "#1E8449",
+  "CSB"  = "#BA4A00",
+  "MM30" = "#7D3C98"
+)
+
+group_shapes <- c(
+  "SS"   = 21,
+  "LG-3" = 22,
+  "CSB"  = 23,
+  "MM30" = 24
+)
+
+p <- ggplot(pca_df, aes(x = PC1, y = PC2,
+                        fill  = Group,
+                        color = Group,
+                        shape = Group)) +
+  
+  geom_point(size = 6, stroke = 1.2, alpha = 0.95) +
+  
+  # ---- NO dotted lines! segment.color = NA removes them ----
+geom_text_repel(
+  aes(label = Label),
+  size               = 3.8,
+  fontface           = "plain",
+  color              = "black",
+  bg.color           = "white",
+  bg.r               = 0.15,
+  box.padding        = 0.8,
+  point.padding      = 0.5,
+  show.legend        = FALSE,
+  max.overlaps       = 30,
+  force              = 3,
+  direction          = "both",
+  segment.color      = NA,      # ← removes dotted lines!
+  min.segment.length = Inf      # ← also removes dotted lines!
+) +
+  
+  scale_color_manual(values = group_colors) +
+  scale_fill_manual(values  = group_colors) +
+  scale_shape_manual(values = group_shapes) +
+  
+  labs(
+    x     = paste0("PC1 (", variance_explained[1], "% variance)"),
+    y     = paste0("PC2 (", variance_explained[2], "% variance)"),
+    color = "Graft combination",
+    fill  = "Graft combination",
+    shape = "Graft combination"
+  ) +
+  
+  geom_hline(yintercept = 0, linetype = "solid",
+             color = "grey80", linewidth = 0.4) +
+  geom_vline(xintercept = 0, linetype = "solid",
+             color = "grey80", linewidth = 0.4) +
+  
+  theme_classic(base_size = 14) +
+  theme(
+    panel.border     = element_rect(color = "black",
+                                    fill = NA,
+                                    linewidth = 1),
+    panel.background = element_rect(fill = "white"),
+    panel.grid.major = element_line(color = "grey95",
+                                    linewidth = 0.3),
+    panel.grid.minor = element_blank(),
+    axis.line        = element_blank(),
+    axis.title.x     = element_text(face = "bold", size = 13,
+                                    margin = margin(t = 10)),
+    axis.title.y     = element_text(face = "bold", size = 13,
+                                    margin = margin(r = 10)),
+    axis.text        = element_text(size = 11, color = "black"),
+    axis.ticks       = element_line(color = "black",
+                                    linewidth = 0.5),
+    
+    # ---- Clean legend - no box! ----
+    legend.position   = "right",
+    legend.title      = element_text(face = "bold", size = 11),
+    legend.text       = element_text(size = 10),
+    legend.background = element_blank(),  # ← no box!
+    legend.key        = element_blank(),  # ← no box around symbols!
+    legend.key.size   = unit(0.8, "cm"),
+    legend.spacing.y  = unit(0.3, "cm"),
+    legend.margin     = margin(0, 0, 0, 0),
+    plot.margin       = margin(20, 20, 20, 20)
+  ) +
+  
+  guides(
+    color = guide_legend(override.aes = list(size = 4)),
+    fill  = guide_legend(override.aes = list(size = 4)),
+    shape = guide_legend(override.aes = list(size = 4))
+  )
+
+# Save
+ggsave(
+  "C:/Users/Student/Downloads/Karthik_images/PCA_Nature_level.png",
+  plot   = p,
+  width  = 10,
+  height = 7,
+  dpi    = 300,
+  bg     = "white"
+)
+
+ggsave(
+
+  "C:/Users/Student/Downloads/Karthik_images/PCA_Nature_level.pdf",
+  plot   = p,
+  width  = 10,
+  height = 7,
+  bg     = "white"
+)
+
+cat("✅ PCA saved!\n")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+library(ggplot2)
+library(ggrepel)
+
+# ============================================================
+# Load and prepare data - same for both designs
+# ============================================================
+counts <- read.csv(
+  "C:/Users/Student/Downloads/Karthik_images/Wmfruit.csv",
+  row.names = 1,
+  header = TRUE,
+  check.names = FALSE
+)
+
+counts_log      <- log2(counts + 1)
+gene_var        <- apply(counts_log, 1, var)
+counts_filtered <- counts_log[gene_var > 0, ]
+
+pca_result <- prcomp(
+  t(counts_filtered),
+  center = TRUE,
+  scale  = TRUE
+)
+
+variance_explained <- round(
+  (pca_result$sdev^2 / sum(pca_result$sdev^2)) * 100, 1
+)
+
+pca_df <- data.frame(
+  Sample = rownames(pca_result$x),
+  PC1    = pca_result$x[, 1],
+  PC2    = pca_result$x[, 2]
+)
+
+pca_df$Group <- ifelse(grepl("CSB",  pca_df$Sample), "CSB",
+                ifelse(grepl("LG3",  pca_df$Sample), "LG-3",
+                ifelse(grepl("MM30", pca_df$Sample), "MM30", "SS")))
+
+pca_df$Label <- pca_df$Sample
+pca_df$Label <- gsub("CSB",  "CSB-",  pca_df$Label)
+pca_df$Label <- gsub("LG3",  "LG3-",  pca_df$Label)
+pca_df$Label <- gsub("MM30", "MM30-", pca_df$Label)
+pca_df$Label <- gsub("SS",   "SS-",   pca_df$Label)
+
+# ============================================================
+# DESIGN 1 - Clean white background
+# Deep professional colors, no dotted lines, no legend box
+# ============================================================
+group_colors_1 <- c(
+  "SS"   = "#1B4F72",
+  "LG-3" = "#1E8449",
+  "CSB"  = "#BA4A00",
+  "MM30" = "#7D3C98"
+)
+
+group_shapes_1 <- c(
+  "SS"   = 21,
+  "LG-3" = 22,
+  "CSB"  = 23,
+  "MM30" = 24
+)
+
+p1 <- ggplot(pca_df, aes(x = PC1, y = PC2,
+                          fill  = Group,
+                          color = Group,
+                          shape = Group)) +
+
+  geom_point(size = 6, stroke = 1.2, alpha = 0.95) +
+
+  geom_text_repel(
+    aes(label = Label),
+    size               = 3.8,
+    fontface           = "plain",
+    color              = "black",
+    bg.color           = "white",
+    bg.r               = 0.15,
+    box.padding        = 0.8,
+    point.padding      = 0.5,
+    show.legend        = FALSE,
+    max.overlaps       = 30,
+    force              = 3,
+    direction          = "both",
+    segment.color      = NA,
+    min.segment.length = Inf
+  ) +
+
+  scale_color_manual(values = group_colors_1) +
+  scale_fill_manual(values  = group_colors_1) +
+  scale_shape_manual(values = group_shapes_1) +
+
+  labs(
+    x     = paste0("PC1 (", variance_explained[1], "% variance)"),
+    y     = paste0("PC2 (", variance_explained[2], "% variance)"),
+    color = "Graft combination",
+    fill  = "Graft combination",
+    shape = "Graft combination"
+  ) +
+
+  geom_hline(yintercept = 0, linetype = "solid",
+             color = "grey80", linewidth = 0.4) +
+  geom_vline(xintercept = 0, linetype = "solid",
+             color = "grey80", linewidth = 0.4) +
+
+  theme_classic(base_size = 14) +
+  theme(
+    panel.border     = element_rect(color = "black",
+                                    fill = NA, linewidth = 1),
+    panel.background = element_rect(fill = "white"),
+    panel.grid.major = element_line(color = "grey95",
+                                    linewidth = 0.3),
+    panel.grid.minor = element_blank(),
+    axis.line        = element_blank(),
+    axis.title.x     = element_text(face = "bold", size = 13,
+                                    margin = margin(t = 10)),
+    axis.title.y     = element_text(face = "bold", size = 13,
+                                    margin = margin(r = 10)),
+    axis.text        = element_text(size = 11, color = "black"),
+    axis.ticks       = element_line(color = "black",
+                                    linewidth = 0.5),
+    legend.position   = "right",
+    legend.title      = element_text(face = "bold", size = 11),
+    legend.text       = element_text(size = 10),
+    legend.background = element_blank(),
+    legend.key        = element_blank(),
+    legend.key.size   = unit(0.8, "cm"),
+    legend.spacing.y  = unit(0.3, "cm"),
+    legend.margin     = margin(0, 0, 0, 0),
+    plot.margin       = margin(20, 20, 20, 20)
+  ) +
+
+  guides(
+    color = guide_legend(override.aes = list(size = 4)),
+    fill  = guide_legend(override.aes = list(size = 4)),
+    shape = guide_legend(override.aes = list(size = 4))
+  )
+
+# ============================================================
+# DESIGN 2 - Light grey background
+# Bright vivid colors, circles only, legend at bottom
+# ============================================================
+group_colors_2 <- c(
+  "SS"   = "#2196F3",   # bright blue
+  "LG-3" = "#4CAF50",   # bright green
+  "CSB"  = "#FF5722",   # bright red-orange
+  "MM30" = "#9C27B0"    # bright purple
+)
+
+p2 <- ggplot(pca_df, aes(x = PC1, y = PC2,
+                          color = Group,
+                          label = Label)) +
+
+  # ---- Light grey background panel ----
+  theme_bw(base_size = 14) +
+
+  # ---- All circles same shape ----
+  geom_point(
+    aes(color = Group),
+    size  = 7,
+    alpha = 0.9,
+    shape = 19
+  ) +
+
+  # ---- White ring around points ----
+  geom_point(
+    size   = 7,
+    shape  = 1,
+    color  = "white",
+    stroke = 0.8
+  ) +
+
+  # ---- Labels without connecting lines ----
+  geom_text_repel(
+    size               = 3.5,
+    fontface           = "bold",
+    color              = "grey20",
+    bg.color           = "white",
+    bg.r               = 0.12,
+    box.padding        = 0.7,
+    point.padding      = 0.5,
+    show.legend        = FALSE,
+    force              = 3,
+    max.overlaps       = 30,
+    segment.color      = NA,
+    min.segment.length = Inf
+  ) +
+
+  scale_color_manual(values = group_colors_2) +
+
+  labs(
+    x     = paste0("PC1 (", variance_explained[1], "% variance)"),
+    y     = paste0("PC2 (", variance_explained[2], "% variance)"),
+    color = "Graft combination"
+  ) +
+
+  geom_hline(yintercept = 0, linetype = "dashed",
+             color = "grey60", linewidth = 0.4) +
+  geom_vline(xintercept = 0, linetype = "dashed",
+             color = "grey60", linewidth = 0.4) +
+
+  theme(
+    panel.background  = element_rect(fill = "#F8F9FA"),
+    panel.grid.major  = element_line(color = "white",
+                                     linewidth = 0.8),
+    panel.grid.minor  = element_blank(),
+    panel.border      = element_rect(color = "grey40",
+                                     linewidth = 0.8),
+    axis.title.x      = element_text(face = "bold", size = 13,
+                                     margin = margin(t = 10)),
+    axis.title.y      = element_text(face = "bold", size = 13,
+                                     margin = margin(r = 10)),
+    axis.text         = element_text(size = 11, color = "black"),
+    axis.ticks        = element_line(color = "grey40",
+                                     linewidth = 0.4),
+
+    # Legend at bottom
+    legend.position   = "bottom",
+    legend.title      = element_text(face = "bold", size = 11),
+    legend.text       = element_text(size = 10),
+    legend.background = element_blank(),
+    legend.key        = element_blank(),
+    legend.key.size   = unit(0.8, "cm"),
+    legend.margin     = margin(10, 0, 0, 0),
+    plot.margin       = margin(20, 20, 20, 20)
+  ) +
+
+  guides(
+    color = guide_legend(
+      nrow = 1,
+      override.aes = list(size = 5)
+    )
+  )
+
+# ============================================================
+# Save both designs
+# ============================================================
+ggsave(
+  "C:/Users/Student/Downloads/Karthik_images/PCA_Design1_Classic.png",
+  plot   = p1,
+  width  = 10,
+  height = 7,
+  dpi    = 300,
+  bg     = "white"
+)
+cat("✅ Design 1 saved!\n")
+
+ggsave(
+  "C:/Users/Student/Downloads/Karthik_images/PCA_Design2_Modern.png",
+  plot   = p2,
+  width  = 10,
+  height = 8,
+  dpi    = 300,
+  bg     = "white"
+)
+cat("✅ Design 2 saved!\n")
+cat("\nBoth PCA designs saved in Karthik_images folder!\n")
