@@ -1,0 +1,241 @@
+# ============================================================
+# Get Normalized Counts from DESeq2 for genes
+# Ramya - West Virginia State University
+# ============================================================
+
+library(DESeq2)
+
+# ============================================================
+# STEP 1: Load raw count table
+# ============================================================
+counts <- read.csv(
+  "C:/Users/Student/Downloads/Karthik/Correlation/Wmfruit.csv",
+  row.names = 1,
+  header = TRUE,
+  check.names = FALSE
+)
+
+cat("Genes:", nrow(counts), "\n")
+cat("Samples:", ncol(counts), "\n")
+cat("Sample names:", colnames(counts), "\n")
+
+# ============================================================
+# STEP 2: Make sure counts are integers
+# ============================================================
+counts <- round(counts)
+counts <- as.matrix(counts)
+
+# ============================================================
+# STEP 3: Create sample information table
+# SG = Self Graft (your control group)
+# ============================================================
+sample_info <- data.frame(
+  row.names = colnames(counts),
+  condition = c("CSB",  "CSB",  "CSB",
+                "LG3",  "LG3",  "LG3",
+                "MM30", "MM30", "MM30",
+                "SG",   "SG",   "SG")
+)
+
+cat("\nSample information:\n")
+print(sample_info)
+
+# ============================================================
+# STEP 4: Create DESeq2 object
+# ============================================================
+dds <- DESeqDataSetFromMatrix(
+  countData = counts,
+  colData   = sample_info,
+  design    = ~ condition
+)
+
+# ============================================================
+# STEP 5: Run normalization
+# ============================================================
+cat("\nRunning DESeq2 normalization...\n")
+dds <- estimateSizeFactors(dds)
+
+cat("\nSize factors:\n")
+print(sizeFactors(dds))
+
+# ============================================================
+# STEP 6: Extract normalized counts
+# ============================================================
+normalized_counts <- counts(dds, normalized = TRUE)
+
+cat("\nDimensions:", dim(normalized_counts), "\n")
+cat("First few rows:\n")
+print(head(normalized_counts))
+
+# ============================================================
+# STEP 7: Save normalized counts
+# ============================================================
+write.csv(
+  normalized_counts,
+  "C:/Users/Student/Downloads/Karthik/Correlation/normalized_counts.csv"
+)
+
+cat("\n✅ Normalized counts saved!\n")
+cat("File: normalized_counts.csv in Correlation folder!\n")
+
+
+
+
+
+
+
+# ============================================================
+# Extract the read counts of mobile elements
+# Ramya - West Virginia State University
+# ============================================================
+cd /home/meghana/Karthik
+mkdir Normalized_counts_mobile
+ls Normalized_counts_mobile/
+# ============================================================
+# Extract the read counts for CSB combination
+# Ramya - West Virginia State University
+# ============================================================
+python3 << 'PYEOF'
+import os
+
+# Read CSB mobile gene IDs
+mobile_genes = []
+with open('/home/meghana/Karthik/Normalized_counts_mobile/C_mobile_final.genes') as f:
+    for line in f:
+        gene = line.strip()
+        if gene:
+            mobile_genes.append(gene)
+
+print(f"CSB mobile genes loaded: {len(mobile_genes)}")
+
+# Read count files for each sample
+samples = ['C1', 'C2', 'C3', 'S1', 'S2', 'S3']
+counts = {gene: {s: 0 for s in samples} for gene in mobile_genes}
+
+for sample in samples:
+    filepath = f'/home/meghana/Karthik/counts_CA/{sample}.gene_readcounts.tsv'
+    if os.path.exists(filepath):
+        with open(filepath) as f:
+            for line in f:
+                parts = line.strip().split('\t')
+                if len(parts) >= 2:
+                    gene = parts[0]
+                    count = parts[1]
+                    if gene in counts:
+                        counts[gene][sample] = count
+        print(f"Loaded: {sample}")
+    else:
+        print(f"WARNING: {filepath} not found!")
+
+# Write count matrix
+outfile = '/home/meghana/Karthik/Normalized_counts_mobile/CSB_mobile_counts.csv'
+with open(outfile, 'w') as f:
+    f.write('Gene,' + ','.join(samples) + '\n')
+    for gene in mobile_genes:
+        row = [gene] + [str(counts[gene][s]) for s in samples]
+        f.write(','.join(row) + '\n')
+
+print(f"\n✅ CSB count matrix saved!")
+print(f"File: {outfile}")
+print(f"Genes: {len(mobile_genes)}")
+print(f"Samples: {samples}")
+PYEOF
+# ============================================================
+# Extract the read counts for LG3 combination
+# Ramya - West Virginia State University
+# ============================================================
+python3 << 'PYEOF'
+import os
+
+# Read LG3 mobile gene IDs
+mobile_genes = []
+with open('/home/meghana/Karthik/Normalized_counts_mobile/L_mobile_final.genes') as f:
+    for line in f:
+        gene = line.strip()
+        if gene:
+            mobile_genes.append(gene)
+
+print(f"LG3 mobile genes loaded: {len(mobile_genes)}")
+
+# Read count files
+samples = ['L1', 'L2', 'L3', 'S1', 'S2', 'S3']
+counts = {gene: {s: 0 for s in samples} for gene in mobile_genes}
+
+for sample in samples:
+    filepath = f'/home/meghana/Karthik/counts/{sample}.gene_readcounts.tsv'
+    if os.path.exists(filepath):
+        with open(filepath) as f:
+            for line in f:
+                parts = line.strip().split('\t')
+                if len(parts) >= 2:
+                    gene = parts[0]
+                    count = parts[1]
+                    if gene in counts:
+                        counts[gene][sample] = count
+        print(f"Loaded: {sample}")
+    else:
+        print(f"WARNING: {filepath} not found!")
+
+# Write count matrix
+outfile = '/home/meghana/Karthik/Normalized_counts_mobile/LG3_mobile_counts.csv'
+with open(outfile, 'w') as f:
+    f.write('Gene,' + ','.join(samples) + '\n')
+    for gene in mobile_genes:
+        row = [gene] + [str(counts[gene][s]) for s in samples]
+        f.write(','.join(row) + '\n')
+
+print(f"\n✅ Done!")
+print(f"Genes: {len(mobile_genes)}")
+print(f"File saved: {outfile}")
+PYEOF
+# ============================================================
+# Extract the read counts for MM30combination
+# Ramya - West Virginia State University
+# ============================================================
+python3 << 'PYEOF'
+import os
+
+# Read MM30 mobile gene IDs
+mobile_genes = []
+with open('/home/meghana/Karthik/Normalized_counts_mobile/M_mobile_final.genes') as f:
+    for line in f:
+        gene = line.strip()
+        if gene:
+            mobile_genes.append(gene)
+
+print(f"MM30 mobile genes loaded: {len(mobile_genes)}")
+
+# Read count files
+samples = ['M1', 'M2', 'M3', 'S1', 'S2', 'S3']
+counts = {gene: {s: 0 for s in samples} for gene in mobile_genes}
+
+for sample in samples:
+    filepath = f'/home/meghana/Karthik/counts_MM/{sample}.gene_readcounts.tsv'
+    if os.path.exists(filepath):
+        with open(filepath) as f:
+            for line in f:
+                parts = line.strip().split('\t')
+                if len(parts) >= 2:
+                    gene = parts[0]
+                    count = parts[1]
+                    if gene in counts:
+                        counts[gene][sample] = count
+        print(f"Loaded: {sample}")
+    else:
+        print(f"WARNING: {filepath} not found!")
+
+# Write count matrix
+outfile = '/home/meghana/Karthik/Normalized_counts_mobile/MM30_mobile_counts.csv'
+with open(outfile, 'w') as f:
+    f.write('Gene,' + ','.join(samples) + '\n')
+    for gene in mobile_genes:
+        row = [gene] + [str(counts[gene][s]) for s in samples]
+        f.write(','.join(row) + '\n')
+
+print(f"\n✅ Done!")
+print(f"Genes: {len(mobile_genes)}")
+print(f"File saved: {outfile}")
+PYEOF
+
+
+
