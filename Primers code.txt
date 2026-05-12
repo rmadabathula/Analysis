@@ -1,0 +1,380 @@
+cd ~/Primers
+
+Step 1 — Install Required Tools
+
+sudo apt update && sudo apt upgrade -y
+sudo apt install -y ncbi-blast+
+sudo apt install -y gffread
+sudo apt install -y muscle
+sudo apt install -y primer3
+sudo apt install -y samtools
+sudo apt install -y seqtk
+
+
+Step 2 — Unzip Genome Files
+
+cd ~/Primers
+gunzip USVL1VR-Ls_genome_v1.fa.gz
+gunzip WCG_genome_v2.5.fa.gz
+gunzip USVL1VR-Ls_v1.gff3.gz
+gunzip WCG_v2.5.gff3.gz
+
+Step 3 — Index Genomes and Build BLAST Databases
+
+samtools faidx USVL1VR-Ls_genome_v1.fa
+samtools faidx WCG_genome_v2.5.fa
+
+makeblastdb -in USVL1VR-Ls_genome_v1.fa -dbtype nucl -out LG_db
+makeblastdb -in WCG_genome_v2.5.fa -dbtype nucl -out WM_db
+
+
+Step 4 — Create Output Folders
+
+cd ~/Primers
+mkdir -p mRNA blast_out orthologs mega_input
+
+
+Step 5 — Extract mRNA Sequences for All 3 Genes
+
+gffread USVL1VR-Ls_v1.gff3 \
+  -g USVL1VR-Ls_genome_v1.fa \
+  -w mRNA/Lagenaria_all_mRNA.fa
+
+for gene in Lsi02G027080 Lsi03G015100 Lsi06G002240
+do
+  grep -A 100 "${gene}\.1" mRNA/Lagenaria_all_mRNA.fa | \
+  awk '/^>/{if(p)exit; p=1} p' > mRNA/${gene}_mRNA.fa
+  echo "Extracted: $gene"
+  head -1 mRNA/${gene}_mRNA.fa
+done
+
+# Check files
+wc -l mRNA/Lsi02G027080_mRNA.fa
+wc -l mRNA/Lsi03G015100_mRNA.fa
+wc -l mRNA/Lsi06G002240_mRNA.fa
+
+
+Step 6 — BLAST Each Gene Against Both Genomes
+
+# vs Watermelon (find ortholog + % identity)
+for gene in Lsi02G027080 Lsi03G015100 Lsi06G002240
+do
+  blastn \
+    -query mRNA/${gene}_mRNA.fa \
+    -db WM_db \
+    -out blast_out/${gene}_vs_WM.tsv \
+    -outfmt "6 qseqid sseqid pident length qstart qend sstart send evalue bitscore" \
+    -evalue 1e-10 \
+    -num_threads 4
+  cat blast_out/${gene}_vs_WM.tsv
+  echo "---"
+done
+
+# vs Lagenaria (find paralogs)
+for gene in Lsi02G027080 Lsi03G015100 Lsi06G002240
+do
+  blastn \
+    -query mRNA/${gene}_mRNA.fa \
+    -db LG_db \
+    -out blast_out/${gene}_vs_LG.tsv \
+    -outfmt "6 qseqid sseqid pident length qstart qend sstart send evalue bitscore" \
+    -evalue 1e-10 \
+    -num_threads 4
+  cat blast_out/${gene}_vs_LG.tsv
+  echo "---"
+done
+
+
+Step 7 — Extract Watermelon Ortholog Sequences
+
+# Lsi02G027080 top hit: CG_Chr09:2581246-2581677
+samtools faidx WCG_genome_v2.5.fa \
+  CG_Chr09:2581246-2581677 > orthologs/WM_Lsi02G027080_ortholog.fa
+sed -i 's/>.*/>WM_Lsi02G027080/' orthologs/WM_Lsi02G027080_ortholog.fa
+
+# Lsi03G015100 top hit: CG_Chr10:29868734-29870362
+samtools faidx WCG_genome_v2.5.fa \
+  CG_Chr10:29868734-29870362 > orthologs/WM_Lsi03G015100_ortholog.fa
+sed -i 's/>.*/>WM_Lsi03G015100/' orthologs/WM_Lsi03G015100_ortholog.fa
+
+# Lsi06G002240 top hit: CG_Chr03:31075412-31081738
+samtools faidx WCG_genome_v2.5.fa \
+  CG_Chr03:31075412-31081738 > orthologs/WM_Lsi06G002240_ortholog.fa
+sed -i 's/>.*/>WM_Lsi06G002240/' orthologs/WM_Lsi06G002240_ortholog.fa
+
+ls -lh orthologs/
+
+
+Step 8 — Combine Lagenaria and Watermelon Sequences
+
+for gene in Lsi02G027080 Lsi03G015100 Lsi06G002240
+do
+  sed "s/>.*/>LG_${gene}/" mRNA/${gene}_mRNA.fa > mega_input/LG_${gene}.fa
+  cat mega_input/LG_${gene}.fa orthologs/WM_${gene}_ortholog.fa \
+    > mega_input/${gene}_combined.fa
+  echo "=== $gene ==="
+  grep ">" mega_input/${gene}_combined.fa
+done
+
+
+Step 9 — Align Using MUSCLE v5
+
+# Note: MUSCLE v5 uses -align and -output (not -in and -out like v3)
+for gene in Lsi02G027080 Lsi03G015100 Lsi06G002240
+do
+  muscle -align mega_input/${gene}_combined.fa \
+         -output mega_input/${gene}_aligned.fa
+  echo "$gene done!"
+done
+
+ls -lh mega_input/*_aligned.fa
+
+
+Step 10 — Paralog extraction 
+
+cd ~/Primers
+
+# Extract Lagenaria paralog for Lsi02G027080
+samtools faidx USVL1VR-Ls_genome_v1.fa \
+  chr02:33445703-33445852 > orthologs/LG_Lsi02G027080_paralog.fa
+sed -i 's/>.*/>LG_Lsi02G027080_paralog/' orthologs/LG_Lsi02G027080_paralog.fa
+
+# Add paralog to the combined file
+cat mega_input/LG_Lsi02G027080.fa \
+    orthologs/WM_Lsi02G027080_ortholog.fa \
+    orthologs/LG_Lsi02G027080_paralog.fa \
+    > mega_input/Lsi02G027080_combined_v2.fa
+
+# Re-align with all 3 sequences
+muscle -align mega_input/Lsi02G027080_combined_v2.fa \
+       -output mega_input/Lsi02G027080_aligned_v2.fa
+
+echo "DONE!"
+grep ">" mega_input/Lsi02G027080_aligned_v2.fa
+
+
+Step 11 - Check beginning of the sequences
+
+Check if the beginning of LG sequence
+# actually has NO match in watermelon at all
+head -5 blast_out/Lsi02G027080_vs_WM.tsv
+
+Step 12 - Mismatch regions
+
+cd ~/Primers
+
+python3 << 'EOF'
+seqs = {}
+current = None
+with open("mega_input/Lsi02G027080_aligned_v2.fa") as f:
+    for line in f:
+        line = line.strip()
+        if line.startswith(">"):
+            current = line[1:]
+            seqs[current] = ""
+        else:
+            seqs[current] += line
+
+names = list(seqs.keys())
+lg = seqs[[n for n in names if "paralog" not in n and "LG" in n][0]]
+wm = seqs[[n for n in names if "WM" in n][0]]
+para = seqs[[n for n in names if "paralog" in n][0]]
+
+print(f"{'Pos':<8} {'MM_vs_WM':<12} {'MM_vs_Para':<14} {'LG_seq':<25} {'WM_seq':<25} {'Para_seq'}")
+print("-"*100)
+
+window = 22
+for i in range(0, len(lg)-window, 3):
+    lg_w = lg[i:i+window]
+    wm_w = wm[i:i+window]
+    pa_w = para[i:i+window]
+    
+    if '-' in lg_w:
+        continue
+    
+    mm_wm = sum(1 for a,b in zip(lg_w, wm_w) if a!=b and b!='-')
+    mm_pa = sum(1 for a,b in zip(lg_w, pa_w) if a!=b and b!='-')
+    
+    if mm_wm >= 3 and mm_pa >= 2:
+        print(f"{i:<8} {mm_wm:<12} {mm_pa:<14} {lg_w:<25} {wm_w:<25} {pa_w}")
+EOF
+
+
+Step 13 - Primers
+
+cd ~/Primers
+
+python3 << 'EOF'
+seqs = {}
+current = None
+with open("mega_input/Lsi02G027080_aligned_v2.fa") as f:
+    for line in f:
+        line = line.strip()
+        if line.startswith(">"):
+            current = line[1:]
+            seqs[current] = ""
+        else:
+            seqs[current] += line
+
+names = list(seqs.keys())
+lg = seqs[[n for n in names if "paralog" not in n and "LG" in n][0]]
+wm = seqs[[n for n in names if "WM" in n][0]]
+para = seqs[[n for n in names if "paralog" in n][0]]
+
+# Remove gap positions from LG to get real sequence
+lg_clean = lg.replace("-","")
+
+# Find best forward primer around position 330-370
+# Find best reverse primer around position 480-510
+# So amplicon = ~150bp
+
+print("=== FORWARD PRIMER CANDIDATES (pos 318-370) ===")
+for i in [318, 321, 324, 327, 330, 339]:
+    lg_w = lg[i:i+22]
+    wm_w = wm[i:i+22]
+    if '-' not in lg_w:
+        gc = (lg_w.count('G') + lg_w.count('C')) / 22 * 100
+        mm = sum(1 for a,b in zip(lg_w,wm_w) if a!=b and b!='-')
+        print(f"Pos {i}: {lg_w}  GC={gc:.0f}%  MM={mm}")
+
+print()
+print("=== REVERSE PRIMER CANDIDATES (pos 486-510) ===")
+for i in [486, 489, 492, 495, 498, 501, 504]:
+    lg_w = lg[i:i+22]
+    wm_w = wm[i:i+22]
+    if '-' not in lg_w:
+        gc = (lg_w.count('G') + lg_w.count('C')) / 22 * 100
+        mm = sum(1 for a,b in zip(lg_w,wm_w) if a!=b and b!='-')
+        # Reverse complement for reverse primer
+        comp = {'A':'T','T':'A','G':'C','C':'G'}
+        rc = ''.join(comp[b] for b in reversed(lg_w))
+        print(f"Pos {i}: {lg_w}  RC={rc}  GC={gc:.0f}%  MM={mm}")
+EOF
+
+Step 14 - Indels
+
+cd ~/Primers
+
+python3 << 'EOF'
+seqs = {}
+current = None
+with open("mega_input/Lsi03G015100_aligned.fa") as f:
+    for line in f:
+        line = line.strip()
+        if line.startswith(">"):
+            current = line[1:]
+            seqs[current] = ""
+        else:
+            seqs[current] += line
+
+names = list(seqs.keys())
+lg = seqs[[n for n in names if "LG" in n][0]]
+wm = seqs[[n for n in names if "WM" in n][0]]
+
+def get_rc(seq):
+    comp = {'A':'T','T':'A','G':'C','C':'G'}
+    return ''.join(comp[b] for b in reversed(seq))
+
+def tm(seq):
+    gc = seq.count('G') + seq.count('C')
+    at = seq.count('A') + seq.count('T')
+    return 4*gc + 2*at
+
+window = 22
+
+print("=== FORWARD PRIMERS (positions 340-390, just before indel) ===")
+for i in range(340, 392, 2):
+    lg_w = lg[i:i+window]
+    if '-' in lg_w: continue
+    gc = (lg_w.count('G') + lg_w.count('C')) / window * 100
+    t = tm(lg_w)
+    mm = sum(1 for a,b in zip(lg_w, wm[i:i+window]) if a!=b and b!='-')
+    if 40 <= gc <= 65:
+        print(f"Pos {i}: {lg_w}  GC={gc:.0f}%  Tm={t}C  MM_vs_WM={mm}")
+
+print()
+print("=== REVERSE PRIMERS (positions 704-780, just after indel) ===")
+for i in range(704, 780, 2):
+    lg_w = lg[i:i+window]
+    if '-' in lg_w: continue
+    gc = (lg_w.count('G') + lg_w.count('C')) / window * 100
+    t = tm(lg_w)
+    mm = sum(1 for a,b in zip(lg_w, wm[i:i+window]) if a!=b and b!='-')
+    rc = get_rc(lg_w)
+    if 40 <= gc <= 65:
+        print(f"Pos {i}: RC={rc}  GC={gc:.0f}%  Tm={t}C  MM_vs_WM={mm}")
+EOF
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+cd ~/Primers
+
+python3 << 'EOF'
+seqs = {}
+current = None
+with open("mega_input/Lsi02G027080_aligned_v2.fa") as f:
+    for line in f:
+        line = line.strip()
+        if line.startswith(">"):
+            current = line[1:]
+            seqs[current] = ""
+        else:
+            seqs[current] += line
+
+names = list(seqs.keys())
+lg = seqs[[n for n in names if "LG" in n][0]]
+wm = seqs[[n for n in names if "WM" in n][0]]
+
+# Extract sequence at any position you want
+# Change these numbers to whatever position you need
+start = 301
+end   = 510
+
+print(f"Position {start} to {end}:")
+print(f"LG: {lg[start:end]}")
+print(f"WM: {wm[start:end]}")
+EOF
