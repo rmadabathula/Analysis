@@ -1,0 +1,1360 @@
+cd /home/meghana/Karthik
+
+hisat2-build WCG_genome_v2.5.fa WCG_idx
+
+mkdir -p bam unmapped_names unmapped_fastq trimmed
+
+###FOR C1
+hisat2 -p 12 --dta -x WCG_idx \
+  -1 trimmed/C1_1_paired.fq.gz -2 trimmed/C1_2_paired.fq.gz \
+| samtools sort -@ 6 -o bam/C1_vsWM.bam
+
+samtools index bam/C1_vsWM.bam
+
+samtools view -f 12 -F 256 bam/C1_vsWM.bam \
+  | awk '{print $1}' | sort -u \
+  > unmapped_names/C1.unmapped.names
+
+wc -l unmapped_names/C1.unmapped.names
+
+ls -lh bam/C1_vsWM.bam bam/C1_vsWM.bam.bai
+
+seqtk subseq trimmed/C1_1_paired.fq.gz unmapped_names/C1.unmapped.names > unmapped_fastq/C1.unmapped_R1.fq
+seqtk subseq trimmed/C1_2_paired.fq.gz unmapped_names/C1.unmapped.names > unmapped_fastq/C1.unmapped_R2.fq
+
+gzip -f unmapped_fastq/C1.unmapped_R1.fq
+gzip -f unmapped_fastq/C1.unmapped_R2.fq
+
+ls -lh unmapped_fastq/C1.unmapped_R1.fq.gz unmapped_fastq/C1.unmapped_R2.fq.gz
+
+###FOR C2
+hisat2 -p 12 --dta -x WCG_idx \
+  -1 trimmed/C2_1_paired.fq.gz -2 trimmed/C2_2_paired.fq.gz \
+| samtools sort -@ 6 -o bam/C2_vsWM.bam
+
+samtools index bam/C2_vsWM.bam
+
+samtools view -f 12 -F 256 bam/C2_vsWM.bam \
+  | awk '{print $1}' | sort -u \
+  > unmapped_names/C2.unmapped.names
+
+wc -l unmapped_names/C2.unmapped.names
+
+ls -lh bam/C2_vsWM.bam bam/C2_vsWM.bam.bai
+
+seqtk subseq trimmed/C2_1_paired.fq.gz unmapped_names/C2.unmapped.names > unmapped_fastq/C2.unmapped_R1.fq
+seqtk subseq trimmed/C2_2_paired.fq.gz unmapped_names/C2.unmapped.names > unmapped_fastq/C2.unmapped_R2.fq
+
+gzip -f unmapped_fastq/C2.unmapped_R1.fq
+gzip -f unmapped_fastq/C2.unmapped_R2.fq
+
+ls -lh unmapped_fastq/C2.unmapped_R1.fq.gz unmapped_fastq/C2.unmapped_R2.fq.gz
+
+###FOR C3
+hisat2 -p 12 --dta -x WCG_idx \
+  -1 trimmed/C3_1_paired.fq.gz -2 trimmed/C3_2_paired.fq.gz \
+| samtools sort -@ 6 -o bam/C3_vsWM.bam
+
+samtools index bam/C3_vsWM.bam
+
+samtools view -f 12 -F 256 bam/C3_vsWM.bam \
+  | awk '{print $1}' | sort -u \
+  > unmapped_names/C3.unmapped.names
+
+wc -l unmapped_names/C3.unmapped.names
+
+ls -lh bam/C3_vsWM.bam bam/C3_vsWM.bam.bai
+
+seqtk subseq trimmed/C3_1_paired.fq.gz unmapped_names/C3.unmapped.names > unmapped_fastq/C3.unmapped_R1.fq
+seqtk subseq trimmed/C3_2_paired.fq.gz unmapped_names/C3.unmapped.names > unmapped_fastq/C3.unmapped_R2.fq
+
+gzip -f unmapped_fastq/C3.unmapped_R1.fq
+gzip -f unmapped_fastq/C3.unmapped_R2.fq
+
+ls -lh unmapped_fastq/C3.unmapped_R1.fq.gz unmapped_fastq/C3.unmapped_R2.fq.gz
+
+
+###FOR L1
+hisat2 -p 12 --dta -x WCG_idx \
+  -1 trimmed/L1_1_paired.fq.gz -2 trimmed/L1_2_paired.fq.gz \
+| samtools sort -@ 6 -o bam/L1_vsWM.bam
+
+samtools index bam/L1_vsWM.bam
+
+samtools view -f 12 -F 256 bam/L1_vsWM.bam \
+  | awk '{print $1}' | sort -u \
+  > unmapped_names/L1.unmapped.names
+
+wc -l unmapped_names/L1.unmapped.names
+
+ls -lh bam/L1_vsWM.bam bam/L1_vsWM.bam.bai
+
+seqtk subseq trimmed/L1_1_paired.fq.gz unmapped_names/L1.unmapped.names > unmapped_fastq/L1.unmapped_R1.fq
+seqtk subseq trimmed/L1_2_paired.fq.gz unmapped_names/L1.unmapped.names > unmapped_fastq/L1.unmapped_R2.fq
+
+gzip -f unmapped_fastq/L1.unmapped_R1.fq
+gzip -f unmapped_fastq/L1.unmapped_R2.fq
+
+ls -lh unmapped_fastq/L1.unmapped_R1.fq.gz unmapped_fastq/L1.unmapped_R2.fq.gz
+
+
+###FOR L2
+hisat2 -p 12 --dta -x WCG_idx \
+  -1 trimmed/L2_1_paired.fq.gz -2 trimmed/L2_2_paired.fq.gz \
+| samtools sort -@ 6 -o bam/L2_vsWM.bam
+
+samtools index bam/L2_vsWM.bam
+
+samtools view -f 12 -F 256 bam/L2_vsWM.bam \
+  | awk '{print $1}' | sort -u \
+  > unmapped_names/L2.unmapped.names
+
+wc -l unmapped_names/L2.unmapped.names
+
+ls -lh bam/L2_vsWM.bam bam/L2_vsWM.bam.bai
+
+seqtk subseq trimmed/L2_1_paired.fq.gz unmapped_names/L2.unmapped.names > unmapped_fastq/L2.unmapped_R1.fq
+seqtk subseq trimmed/L2_2_paired.fq.gz unmapped_names/L2.unmapped.names > unmapped_fastq/L2.unmapped_R2.fq
+
+gzip -f unmapped_fastq/L2.unmapped_R1.fq
+gzip -f unmapped_fastq/L2.unmapped_R2.fq
+
+ls -lh unmapped_fastq/L2.unmapped_R1.fq.gz unmapped_fastq/L2.unmapped_R2.fq.gz
+
+
+###FOR L3
+hisat2 -p 12 --dta -x WCG_idx \
+  -1 trimmed/L3_1_paired.fq.gz -2 trimmed/L3_2_paired.fq.gz \
+| samtools sort -@ 6 -o bam/L3_vsWM.bam
+
+samtools index bam/L3_vsWM.bam
+
+samtools view -f 12 -F 256 bam/L3_vsWM.bam \
+  | awk '{print $1}' | sort -u \
+  > unmapped_names/L3.unmapped.names
+
+wc -l unmapped_names/L3.unmapped.names
+
+ls -lh bam/L3_vsWM.bam bam/L3_vsWM.bam.bai
+
+seqtk subseq trimmed/L3_1_paired.fq.gz unmapped_names/L3.unmapped.names > unmapped_fastq/L3.unmapped_R1.fq
+seqtk subseq trimmed/L3_2_paired.fq.gz unmapped_names/L3.unmapped.names > unmapped_fastq/L3.unmapped_R2.fq
+
+gzip -f unmapped_fastq/L3.unmapped_R1.fq
+gzip -f unmapped_fastq/L3.unmapped_R2.fq
+
+ls -lh unmapped_fastq/L3.unmapped_R1.fq.gz unmapped_fastq/L3.unmapped_R2.fq.gz
+
+
+###FOR M1
+hisat2 -p 12 --dta -x WCG_idx \
+  -1 trimmed/M1_1_paired.fq.gz -2 trimmed/M1_2_paired.fq.gz \
+| samtools sort -@ 6 -o bam/M1_vsWM.bam
+
+samtools index bam/M1_vsWM.bam
+
+samtools view -f 12 -F 256 bam/M1_vsWM.bam \
+  | awk '{print $1}' | sort -u \
+  > unmapped_names/M1.unmapped.names
+
+wc -l unmapped_names/M1.unmapped.names
+
+ls -lh bam/M1_vsWM.bam bam/M1_vsWM.bam.bai
+
+seqtk subseq trimmed/M1_1_paired.fq.gz unmapped_names/M1.unmapped.names > unmapped_fastq/M1.unmapped_R1.fq
+seqtk subseq trimmed/M1_2_paired.fq.gz unmapped_names/M1.unmapped.names > unmapped_fastq/M1.unmapped_R2.fq
+
+gzip -f unmapped_fastq/M1.unmapped_R1.fq
+gzip -f unmapped_fastq/M1.unmapped_R2.fq
+
+ls -lh unmapped_fastq/M1.unmapped_R1.fq.gz unmapped_fastq/M1.unmapped_R2.fq.gz
+
+
+###FOR M2
+hisat2 -p 12 --dta -x WCG_idx \
+  -1 trimmed/M2_1_paired.fq.gz -2 trimmed/M2_2_paired.fq.gz \
+| samtools sort -@ 6 -o bam/M2_vsWM.bam
+
+samtools index bam/M2_vsWM.bam
+
+samtools view -f 12 -F 256 bam/M2_vsWM.bam \
+  | awk '{print $1}' | sort -u \
+  > unmapped_names/M2.unmapped.names
+
+wc -l unmapped_names/M2.unmapped.names
+
+ls -lh bam/M2_vsWM.bam bam/M2_vsWM.bam.bai
+
+seqtk subseq trimmed/M2_1_paired.fq.gz unmapped_names/M2.unmapped.names > unmapped_fastq/M2.unmapped_R1.fq
+seqtk subseq trimmed/M2_2_paired.fq.gz unmapped_names/M2.unmapped.names > unmapped_fastq/M2.unmapped_R2.fq
+
+gzip -f unmapped_fastq/M2.unmapped_R1.fq
+gzip -f unmapped_fastq/M2.unmapped_R2.fq
+
+ls -lh unmapped_fastq/M2.unmapped_R1.fq.gz unmapped_fastq/M2.unmapped_R2.fq.gz
+
+
+###FOR M3
+hisat2 -p 12 --dta -x WCG_idx \
+  -1 trimmed/M3_1_paired.fq.gz -2 trimmed/M3_2_paired.fq.gz \
+| samtools sort -@ 6 -o bam/M3_vsWM.bam
+
+samtools index bam/M3_vsWM.bam
+
+samtools view -f 12 -F 256 bam/M3_vsWM.bam \
+  | awk '{print $1}' | sort -u \
+  > unmapped_names/M3.unmapped.names
+
+wc -l unmapped_names/M3.unmapped.names
+
+ls -lh bam/M3_vsWM.bam bam/M3_vsWM.bam.bai
+
+seqtk subseq trimmed/M3_1_paired.fq.gz unmapped_names/M3.unmapped.names > unmapped_fastq/M3.unmapped_R1.fq
+seqtk subseq trimmed/M3_2_paired.fq.gz unmapped_names/M3.unmapped.names > unmapped_fastq/M3.unmapped_R2.fq
+
+gzip -f unmapped_fastq/M3.unmapped_R1.fq
+gzip -f unmapped_fastq/M3.unmapped_R2.fq
+
+ls -lh unmapped_fastq/M3.unmapped_R1.fq.gz unmapped_fastq/M3.unmapped_R2.fq.gz
+
+
+###FOR S1
+hisat2 -p 12 --dta -x WCG_idx \
+  -1 trimmed/S1_1_paired.fq.gz -2 trimmed/S1_2_paired.fq.gz \
+| samtools sort -@ 6 -o bam/S1_vsWM.bam
+
+samtools index bam/S1_vsWM.bam
+
+samtools view -f 12 -F 256 bam/S1_vsWM.bam \
+  | awk '{print $1}' | sort -u \
+  > unmapped_names/S1.unmapped.names
+
+wc -l unmapped_names/S1.unmapped.names
+
+ls -lh bam/S1_vsWM.bam bam/S1_vsWM.bam.bai
+
+seqtk subseq trimmed/S1_1_paired.fq.gz unmapped_names/S1.unmapped.names > unmapped_fastq/S1.unmapped_R1.fq
+seqtk subseq trimmed/S1_2_paired.fq.gz unmapped_names/S1.unmapped.names > unmapped_fastq/S1.unmapped_R2.fq
+
+gzip -f unmapped_fastq/S1.unmapped_R1.fq
+gzip -f unmapped_fastq/S1.unmapped_R2.fq
+
+ls -lh unmapped_fastq/S1.unmapped_R1.fq.gz unmapped_fastq/S1.unmapped_R2.fq.gz
+
+
+###FOR S2
+hisat2 -p 12 --dta -x WCG_idx \
+  -1 trimmed/S2_1_paired.fq.gz -2 trimmed/S2_2_paired.fq.gz \
+| samtools sort -@ 6 -o bam/S2_vsWM.bam
+
+samtools index bam/S2_vsWM.bam
+
+samtools view -f 12 -F 256 bam/S2_vsWM.bam \
+  | awk '{print $1}' | sort -u \
+  > unmapped_names/S2.unmapped.names
+
+wc -l unmapped_names/S2.unmapped.names
+
+ls -lh bam/S2_vsWM.bam bam/S2_vsWM.bam.bai
+
+seqtk subseq trimmed/S2_1_paired.fq.gz unmapped_names/S2.unmapped.names > unmapped_fastq/S2.unmapped_R1.fq
+seqtk subseq trimmed/S2_2_paired.fq.gz unmapped_names/S2.unmapped.names > unmapped_fastq/S2.unmapped_R2.fq
+
+gzip -f unmapped_fastq/S2.unmapped_R1.fq
+gzip -f unmapped_fastq/S2.unmapped_R2.fq
+
+ls -lh unmapped_fastq/S2.unmapped_R1.fq.gz unmapped_fastq/S2.unmapped_R2.fq.gz
+
+
+###FOR S3
+hisat2 -p 12 --dta -x WCG_idx \
+  -1 trimmed/S3_1_paired.fq.gz -2 trimmed/S3_2_paired.fq.gz \
+| samtools sort -@ 6 -o bam/S3_vsWM.bam
+
+samtools index bam/S3_vsWM.bam
+
+samtools view -f 12 -F 256 bam/S3_vsWM.bam \
+  | awk '{print $1}' | sort -u \
+  > unmapped_names/S3.unmapped.names
+
+wc -l unmapped_names/S3.unmapped.names
+
+ls -lh bam/S3_vsWM.bam bam/S3_vsWM.bam.bai
+
+seqtk subseq trimmed/S3_1_paired.fq.gz unmapped_names/S3.unmapped.names > unmapped_fastq/S3.unmapped_R1.fq
+seqtk subseq trimmed/S3_2_paired.fq.gz unmapped_names/S3.unmapped.names > unmapped_fastq/S3.unmapped_R2.fq
+
+gzip -f unmapped_fastq/S3.unmapped_R1.fq
+gzip -f unmapped_fastq/S3.unmapped_R2.fq
+
+ls -lh unmapped_fastq/S3.unmapped_R1.fq.gz unmapped_fastq/S3.unmapped_R2.fq.gz
+
+
+###FOR LAGENARIA HETEROGRAFT MOBILE GENE ANALYSIS
+cd ~/Karthik
+mkdir -p blast_out fasta bed genes counts results
+
+makeblastdb \
+-in USVL1VR-Ls_genome_v1.fa \
+-dbtype nucl \
+-out LG_db
+
+ls -lh LG_db.*
+
+for s in L1 L2 L3 S1 S2 S3
+do
+  seqtk seq -a unmapped_fastq/${s}.unmapped_R1.fq.gz > fasta/${s}_R1.fa
+  seqtk seq -a unmapped_fastq/${s}.unmapped_R2.fq.gz > fasta/${s}_R2.fa
+done
+
+
+for s in L1 L2 L3 S1 S2 S3
+do
+  blastn \
+  -query fasta/${s}_R1.fa \
+  -db LG_db \
+  -out blast_out/${s}_R1_vs_LG.tsv \
+  -outfmt "6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore" \
+  -evalue 1e-10 \
+  -num_threads 12
+
+  blastn \
+  -query fasta/${s}_R2.fa \
+  -db LG_db \
+  -out blast_out/${s}_R2_vs_LG.tsv \
+  -outfmt "6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore" \
+  -evalue 1e-10 \
+  -num_threads 12
+done
+
+wc -l blast_out/*_vs_LG.tsv
+
+for s in L1 L2 L3 S1 S2 S3
+do
+  awk '$3>=95 && $4>=50' blast_out/${s}_R1_vs_LG.tsv > blast_out/${s}_R1.filtered.tsv
+  awk '$3>=95 && $4>=50' blast_out/${s}_R2_vs_LG.tsv > blast_out/${s}_R2.filtered.tsv
+done
+
+wc -l blast_out/*.filtered.tsv
+
+for s in L1 L2 L3 S1 S2 S3
+do
+  echo "${s} R1 unique reads:"
+  cut -f1 blast_out/${s}_R1.filtered.tsv | sort -u | wc -l
+
+  echo "${s} R2 unique reads:"
+  cut -f1 blast_out/${s}_R2.filtered.tsv | sort -u | wc -l
+done
+
+
+for s in L1 L2 L3 S1 S2 S3
+do
+  sort -k1,1 -k12,12gr blast_out/${s}_R1.filtered.tsv | sort -u -k1,1 > blast_out/${s}_R1.besthit.tsv
+  sort -k1,1 -k12,12gr blast_out/${s}_R2.filtered.tsv | sort -u -k1,1 > blast_out/${s}_R2.besthit.tsv
+done
+
+
+wc -l blast_out/*.besthit.tsv
+
+for s in L1 L2 L3 S1 S2 S3
+do
+  awk 'BEGIN{OFS="\t"}{
+    chr=$2; s=$9; e=$10;
+    if(s>e){t=s;s=e;e=t}
+    print chr, s-1, e, $1
+  }' blast_out/${s}_R1.besthit.tsv > bed/${s}_R1.bed
+
+  awk 'BEGIN{OFS="\t"}{
+    chr=$2; s=$9; e=$10;
+    if(s>e){t=s;s=e;e=t}
+    print chr, s-1, e, $1
+  }' blast_out/${s}_R2.besthit.tsv > bed/${s}_R2.bed
+done
+
+awk '$3=="gene"' USVL1VR-Ls_v1.gff3 > genes/LG.genes_only.gff3
+
+ls bed | head
+
+ls bed/*.bed | wc -l
+
+ for s in L1 L2 L3 S1 S2 S3
+do
+  bedtools intersect -a bed/${s}_R1.bed -b genes/LG.genes_only.gff3 -wa -wb \
+  | awk 'BEGIN{FS=OFS="\t"}{
+      attr=$13
+      gsub(/.*ID=/,"",attr)
+      gsub(/;.*/,"",attr)
+      print $4, attr
+    }' \
+  | awk '!seen[$1]++' \
+  > genes/${s}_R1.read_gene.tsv
+
+  bedtools intersect -a bed/${s}_R2.bed -b genes/LG.genes_only.gff3 -wa -wb \
+  | awk 'BEGIN{FS=OFS="\t"}{
+      attr=$13
+      gsub(/.*ID=/,"",attr)
+      gsub(/;.*/,"",attr)
+      print $4, attr
+    }' \
+  | awk '!seen[$1]++' \
+  > genes/${s}_R2.read_gene.tsv
+done
+
+for f in genes/*_R1.read_gene.tsv genes/*_R2.read_gene.tsv
+do
+  dups=$(cut -f1 "$f" | sort | uniq -d | wc -l)
+  echo "$f : $dups duplicated read IDs"
+done
+
+for s in L1 L2 L3 S1 S2 S3
+do
+  cat genes/${s}_R1.read_gene.tsv genes/${s}_R2.read_gene.tsv \
+  | cut -f2 \
+  | sort -u \
+  > genes/${s}.genes
+done
+
+
+wc -l genes/*.genes
+
+for s in L1 L2 L3 S1 S2 S3
+do
+  cat genes/${s}_R1.read_gene.tsv genes/${s}_R2.read_gene.tsv \
+  | cut -f2 \
+  | sort \
+  | uniq -c \
+  | awk 'BEGIN{OFS="\t"}{print $2,$1}' \
+  > counts/${s}.gene_readcounts.tsv
+done
+
+ls counts/*.gene_readcounts.tsv | wc -l
+
+head counts/L1.gene_readcounts.tsv
+
+awk '$2 !~ /^[0-9]+$/ {print}' counts/L1.gene_readcounts.tsv | head
+
+for f in counts/*.gene_readcounts.tsv
+do
+  total=$(awk '{sum+=$2} END{print sum}' "$f")
+  echo "$f total_counts: $total"
+done
+
+cat genes/L1.genes genes/L2.genes genes/L3.genes | sort -u > results/L_all.genes
+cat genes/S1.genes genes/S2.genes genes/S3.genes | sort -u > results/S_all.genes
+
+cat genes/L1.genes genes/L2.genes genes/L3.genes \
+| sort \
+| uniq -c \
+| awk '$1>=2 {print $2}' \
+> results/L_rep2.genes
+
+cat genes/S1.genes genes/S2.genes genes/S3.genes | sort -u > results/S_background.genes
+
+comm -23 <(sort results/L_rep2.genes) <(sort results/S_background.genes) > results/L_mobile_final.genes
+
+wc -l results/L_rep2.genes results/S_background.genes results/L_mobile_final.genes
+
+wc -l results/*.genes
+
+
+
+###FOR Carolina Strongback HETEROGRAFT MOBILE GENE ANALYSIS
+
+cd ~/Karthik
+
+mkdir -p blast_out_CA fasta_CA bed_CA genes_CA counts_CA results_CA
+
+makeblastdb \
+-in USVL246_genome_v1.fa \
+-dbtype nucl \
+-out CA_db
+
+ls -lh CA_db.*
+
+for s in C1 C2 C3 S1 S2 S3
+do
+  seqtk seq -a unmapped_fastq/${s}.unmapped_R1.fq.gz > fasta_CA/${s}_R1.fa
+  seqtk seq -a unmapped_fastq/${s}.unmapped_R2.fq.gz > fasta_CA/${s}_R2.fa
+done
+
+blastn \
+-query fasta_CA/C1_R1.fa \
+-db CA_db \
+-out blast_out_CA/C1_R1_vs_CA.tsv \
+-outfmt "6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore" \
+-evalue 1e-10 \
+-num_threads 2
+
+blastn \
+-query fasta_CA/C1_R2.fa \
+-db CA_db \
+-out blast_out_CA/C1_R2_vs_CA.tsv \
+-outfmt "6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore" \
+-evalue 1e-10 \
+-num_threads 2
+
+blastn \
+-query fasta_CA/C2_R1.fa \
+-db CA_db \
+-out blast_out_CA/C2_R1_vs_CA.tsv \
+-outfmt "6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore" \
+-evalue 1e-10 \
+-num_threads 2
+
+blastn \
+-query fasta_CA/C2_R2.fa \
+-db CA_db \
+-out blast_out_CA/C2_R2_vs_CA.tsv \
+-outfmt "6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore" \
+-evalue 1e-10 \
+-num_threads 2
+
+blastn \
+-query fasta_CA/C3_R1.fa \
+-db CA_db \
+-out blast_out_CA/C3_R1_vs_CA.tsv \
+-outfmt "6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore" \
+-evalue 1e-10 \
+-num_threads 2
+
+blastn \
+-query fasta_CA/C3_R2.fa \
+-db CA_db \
+-out blast_out_CA/C3_R2_vs_CA.tsv \
+-outfmt "6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore" \
+-evalue 1e-10 \
+-num_threads 2
+
+blastn \
+-query fasta_CA/S1_R1.fa \
+-db CA_db \
+-out blast_out_CA/S1_R1_vs_CA.tsv \
+-outfmt "6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore" \
+-evalue 1e-10 \
+-num_threads 2
+
+blastn \
+-query fasta_CA/S1_R2.fa \
+-db CA_db \
+-out blast_out_CA/S1_R2_vs_CA.tsv \
+-outfmt "6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore" \
+-evalue 1e-10 \
+-num_threads 2
+
+blastn \
+-query fasta_CA/S2_R1.fa \
+-db CA_db \
+-out blast_out_CA/S2_R1_vs_CA.tsv \
+-outfmt "6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore" \
+-evalue 1e-10 \
+-num_threads 2
+
+blastn \
+-query fasta_CA/S2_R2.fa \
+-db CA_db \
+-out blast_out_CA/S2_R2_vs_CA.tsv \
+-outfmt "6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore" \
+-evalue 1e-10 \
+-num_threads 2
+
+blastn \
+-query fasta_CA/S3_R1.fa \
+-db CA_db \
+-out blast_out_CA/S3_R1_vs_CA.tsv \
+-outfmt "6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore" \
+-evalue 1e-10 \
+-num_threads 2
+
+blastn \
+-query fasta_CA/S3_R2.fa \
+-db CA_db \
+-out blast_out_CA/S3_R2_vs_CA.tsv \
+-outfmt "6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore" \
+-evalue 1e-10 \
+-num_threads 2
+
+wc -l blast_out_CA/*_vs_CA.tsv
+
+for s in C1 C2 C3 S1 S2 S3
+do
+  awk '$3>=95 && $4>=50' blast_out_CA/${s}_R1_vs_CA.tsv > blast_out_CA/${s}_R1.filtered.tsv
+  awk '$3>=95 && $4>=50' blast_out_CA/${s}_R2_vs_CA.tsv > blast_out_CA/${s}_R2.filtered.tsv
+done
+
+wc -l blast_out_CA/*.filtered.tsv
+
+for s in C1 C2 C3 S1 S2 S3
+do
+  echo "${s} R1 unique reads:"
+  cut -f1 blast_out_CA/${s}_R1.filtered.tsv | sort -u | wc -l
+
+  echo "${s} R2 unique reads:"
+  cut -f1 blast_out_CA/${s}_R2.filtered.tsv | sort -u | wc -l
+done
+
+for s in C1 C2 C3 S1 S2 S3
+do
+  sort -k1,1 -k12,12gr blast_out_CA/${s}_R1.filtered.tsv | sort -u -k1,1 > blast_out_CA/${s}_R1.besthit.tsv
+  sort -k1,1 -k12,12gr blast_out_CA/${s}_R2.filtered.tsv | sort -u -k1,1 > blast_out_CA/${s}_R2.besthit.tsv
+done
+
+wc -l blast_out_CA/*.besthit.tsv
+
+for s in C1 C2 C3 S1 S2 S3
+do
+  awk 'BEGIN{OFS="\t"}{
+    chr=$2; s=$9; e=$10;
+    if(s>e){t=s;s=e;e=t}
+    print chr, s-1, e, $1
+  }' blast_out_CA/${s}_R1.besthit.tsv > bed_CA/${s}_R1.bed
+
+  awk 'BEGIN{OFS="\t"}{
+    chr=$2; s=$9; e=$10;
+    if(s>e){t=s;s=e;e=t}
+    print chr, s-1, e, $1
+  }' blast_out_CA/${s}_R2.besthit.tsv > bed_CA/${s}_R2.bed
+done
+
+awk '$3=="gene"' USVL246_v1.gff3 > genes_CA/CA.genes_only.gff3
+
+ls bed_CA | head
+
+ls bed_CA/*.bed | wc -l
+
+for s in C1 C2 C3 S1 S2 S3
+do
+  bedtools intersect -a bed_CA/${s}_R1.bed -b genes_CA/CA.genes_only.gff3 -wa -wb \
+  | awk 'BEGIN{FS=OFS="\t"}{
+      attr=$13
+      gsub(/.*ID=/,"",attr)
+      gsub(/;.*/,"",attr)
+      print $4, attr
+    }' \
+  | awk '!seen[$1]++' \
+  > genes_CA/${s}_R1.read_gene.tsv
+
+  bedtools intersect -a bed_CA/${s}_R2.bed -b genes_CA/CA.genes_only.gff3 -wa -wb \
+  | awk 'BEGIN{FS=OFS="\t"}{
+      attr=$13
+      gsub(/.*ID=/,"",attr)
+      gsub(/;.*/,"",attr)
+      print $4, attr
+    }' \
+  | awk '!seen[$1]++' \
+  > genes_CA/${s}_R2.read_gene.tsv
+done
+
+for f in genes_CA/*_R1.read_gene.tsv genes_CA/*_R2.read_gene.tsv
+do
+  dups=$(cut -f1 "$f" | sort | uniq -d | wc -l)
+  echo "$f : $dups duplicated read IDs"
+done
+
+for s in C1 C2 C3 S1 S2 S3
+do
+  cat genes_CA/${s}_R1.read_gene.tsv genes_CA/${s}_R2.read_gene.tsv \
+  | cut -f2 \
+  | sort -u \
+  > genes_CA/${s}.genes
+done
+
+wc -l genes_CA/*.genes
+
+for s in C1 C2 C3 S1 S2 S3
+do
+  cat genes_CA/${s}_R1.read_gene.tsv genes_CA/${s}_R2.read_gene.tsv \
+  | cut -f2 \
+  | sort \
+  | uniq -c \
+  | awk 'BEGIN{OFS="\t"}{print $2,$1}' \
+  > counts_CA/${s}.gene_readcounts.tsv
+done
+
+ls counts_CA/*.gene_readcounts.tsv | wc -l
+
+head counts_CA/C1.gene_readcounts.tsv
+
+awk '$2 !~ /^[0-9]+$/ {print}' counts_CA/C1.gene_readcounts.tsv | head
+
+for f in counts_CA/*.gene_readcounts.tsv
+do
+  total=$(awk '{sum+=$2} END{print sum}' "$f")
+  echo "$f total_counts: $total"
+done
+
+cat genes_CA/C1.genes genes_CA/C2.genes genes_CA/C3.genes | sort -u > results_CA/C_all.genes
+cat genes_CA/S1.genes genes_CA/S2.genes genes_CA/S3.genes | sort -u > results_CA/S_all.genes
+
+cat genes_CA/C1.genes genes_CA/C2.genes genes_CA/C3.genes \
+| sort \
+| uniq -c \
+| awk '$1>=2 {print $2}' \
+> results_CA/C_rep2.genes
+
+cat genes_CA/S1.genes genes_CA/S2.genes genes_CA/S3.genes | sort -u > results_CA/S_background.genes
+
+comm -23 <(sort results_CA/C_rep2.genes) <(sort results_CA/S_background.genes) > results_CA/C_mobile_final.genes
+
+wc -l results_CA/C_rep2.genes results_CA/S_background.genes results_CA/C_mobile_final.genes
+
+wc -l results_CA/*.genes
+
+
+###FOR MM30 HETEROGRAFT MOBILE GENE ANALYSIS
+
+### FOR MM30 HYBRID HETEROGRAFT MOBILE GENE ANALYSIS
+
+cd ~/Karthik
+mkdir -p ref_MM fasta_MM blast_out_MM bed_MM genes_MM counts_MM results_MM
+
+### 1. Prefix FASTA headers so maxima and moschata chromosome names do not clash
+awk '/^>/{print ">max_" substr($0,2); next} {print}' Cmaxima_v1.1.chr.fa > ref_MM/Cmaxima_prefixed.fa
+awk '/^>/{print ">mos_" substr($0,2); next} {print}' Cmoschata_v1.chr.fa > ref_MM/Cmoschata_prefixed.fa
+
+### 2. Combine the two parent genomes
+cat ref_MM/Cmaxima_prefixed.fa ref_MM/Cmoschata_prefixed.fa > ref_MM/MM_combined.fa
+
+### 3. Build BLAST database
+makeblastdb \
+-in ref_MM/MM_combined.fa \
+-dbtype nucl \
+-out MM_db
+
+ls -lh MM_db.*
+
+### 4. Prefix GFF chromosome names the same way
+awk 'BEGIN{FS=OFS="\t"} /^#/ {print; next} {$1="max_"$1; print}' Cmaxima_v1.1.gff3 > ref_MM/Cmaxima_prefixed.gff3
+awk 'BEGIN{FS=OFS="\t"} /^#/ {print; next} {$1="mos_"$1; print}' Cmoschata_v1.gff3 > ref_MM/Cmoschata_prefixed.gff3
+
+### 5. Combine GFF files
+cat ref_MM/Cmaxima_prefixed.gff3 ref_MM/Cmoschata_prefixed.gff3 > ref_MM/MM_combined.gff3
+
+### 6. Extract gene features only
+awk '$3=="gene"' ref_MM/MM_combined.gff3 > genes_MM/MM.genes_only.gff3
+
+### 7. Convert unmapped reads from FASTQ to FASTA
+for s in M1 M2 M3 S1 S2 S3
+do
+  seqtk seq -a unmapped_fastq/${s}.unmapped_R1.fq.gz > fasta_MM/${s}_R1.fa
+  seqtk seq -a unmapped_fastq/${s}.unmapped_R2.fq.gz > fasta_MM/${s}_R2.fa
+done
+
+### 8. Run BLAST one file at a time with 2 threads
+
+blastn \
+-query fasta_MM/M1_R1.fa \
+-db MM_db \
+-out blast_out_MM/M1_R1_vs_MM.tsv \
+-outfmt "6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore" \
+-evalue 1e-10 \
+-num_threads 2
+
+blastn \
+-query fasta_MM/M1_R2.fa \
+-db MM_db \
+-out blast_out_MM/M1_R2_vs_MM.tsv \
+-outfmt "6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore" \
+-evalue 1e-10 \
+-num_threads 2
+
+blastn \
+-query fasta_MM/M2_R1.fa \
+-db MM_db \
+-out blast_out_MM/M2_R1_vs_MM.tsv \
+-outfmt "6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore" \
+-evalue 1e-10 \
+-num_threads 2
+
+blastn \
+-query fasta_MM/M2_R2.fa \
+-db MM_db \
+-out blast_out_MM/M2_R2_vs_MM.tsv \
+-outfmt "6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore" \
+-evalue 1e-10 \
+-num_threads 2
+
+blastn \
+-query fasta_MM/M3_R1.fa \
+-db MM_db \
+-out blast_out_MM/M3_R1_vs_MM.tsv \
+-outfmt "6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore" \
+-evalue 1e-10 \
+-num_threads 2
+
+blastn \
+-query fasta_MM/M3_R2.fa \
+-db MM_db \
+-out blast_out_MM/M3_R2_vs_MM.tsv \
+-outfmt "6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore" \
+-evalue 1e-10 \
+-num_threads 2
+
+blastn \
+-query fasta_MM/S1_R1.fa \
+-db MM_db \
+-out blast_out_MM/S1_R1_vs_MM.tsv \
+-outfmt "6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore" \
+-evalue 1e-10 \
+-num_threads 2
+
+blastn \
+-query fasta_MM/S1_R2.fa \
+-db MM_db \
+-out blast_out_MM/S1_R2_vs_MM.tsv \
+-outfmt "6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore" \
+-evalue 1e-10 \
+-num_threads 2
+
+blastn \
+-query fasta_MM/S2_R1.fa \
+-db MM_db \
+-out blast_out_MM/S2_R1_vs_MM.tsv \
+-outfmt "6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore" \
+-evalue 1e-10 \
+-num_threads 2
+
+blastn \
+-query fasta_MM/S2_R2.fa \
+-db MM_db \
+-out blast_out_MM/S2_R2_vs_MM.tsv \
+-outfmt "6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore" \
+-evalue 1e-10 \
+-num_threads 2
+
+blastn \
+-query fasta_MM/S3_R1.fa \
+-db MM_db \
+-out blast_out_MM/S3_R1_vs_MM.tsv \
+-outfmt "6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore" \
+-evalue 1e-10 \
+-num_threads 2
+
+blastn \
+-query fasta_MM/S3_R2.fa \
+-db MM_db \
+-out blast_out_MM/S3_R2_vs_MM.tsv \
+-outfmt "6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore" \
+-evalue 1e-10 \
+-num_threads 2
+
+wc -l blast_out_MM/*_vs_MM.tsv
+
+### 9. Biological filtering
+for s in M1 M2 M3 S1 S2 S3
+do
+  awk '$3>=95 && $4>=50' blast_out_MM/${s}_R1_vs_MM.tsv > blast_out_MM/${s}_R1.filtered.tsv
+  awk '$3>=95 && $4>=50' blast_out_MM/${s}_R2_vs_MM.tsv > blast_out_MM/${s}_R2.filtered.tsv
+done
+
+wc -l blast_out_MM/*.filtered.tsv
+
+### 10. Count unique reads
+for s in M1 M2 M3 S1 S2 S3
+do
+  echo "${s} R1 unique reads:"
+  cut -f1 blast_out_MM/${s}_R1.filtered.tsv | sort -u | wc -l
+
+  echo "${s} R2 unique reads:"
+  cut -f1 blast_out_MM/${s}_R2.filtered.tsv | sort -u | wc -l
+done
+
+### 11. Keep best hit per read
+for s in M1 M2 M3 S1 S2 S3
+do
+  sort -k1,1 -k12,12gr blast_out_MM/${s}_R1.filtered.tsv | sort -u -k1,1 > blast_out_MM/${s}_R1.besthit.tsv
+  sort -k1,1 -k12,12gr blast_out_MM/${s}_R2.filtered.tsv | sort -u -k1,1 > blast_out_MM/${s}_R2.besthit.tsv
+done
+
+wc -l blast_out_MM/*.besthit.tsv
+
+### 12. Convert BLAST besthit.tsv to BED
+for s in M1 M2 M3 S1 S2 S3
+do
+  awk 'BEGIN{OFS="\t"}{
+    chr=$2; s=$9; e=$10;
+    if(s>e){t=s;s=e;e=t}
+    print chr, s-1, e, $1
+  }' blast_out_MM/${s}_R1.besthit.tsv > bed_MM/${s}_R1.bed
+
+  awk 'BEGIN{OFS="\t"}{
+    chr=$2; s=$9; e=$10;
+    if(s>e){t=s;s=e;e=t}
+    print chr, s-1, e, $1
+  }' blast_out_MM/${s}_R2.besthit.tsv > bed_MM/${s}_R2.bed
+done
+
+ls bed_MM | head
+ls bed_MM/*.bed | wc -l
+
+### 13. Map BED hits to hybrid genes, keeping one gene per read
+for s in M1 M2 M3 S1 S2 S3
+do
+  bedtools intersect -a bed_MM/${s}_R1.bed -b genes_MM/MM.genes_only.gff3 -wa -wb \
+  | awk 'BEGIN{FS=OFS="\t"}{
+      attr=$13
+      gsub(/.*ID=/,"",attr)
+      gsub(/;.*/,"",attr)
+      print $4, attr
+    }' \
+  | awk '!seen[$1]++' \
+  > genes_MM/${s}_R1.read_gene.tsv
+
+  bedtools intersect -a bed_MM/${s}_R2.bed -b genes_MM/MM.genes_only.gff3 -wa -wb \
+  | awk 'BEGIN{FS=OFS="\t"}{
+      attr=$13
+      gsub(/.*ID=/,"",attr)
+      gsub(/;.*/,"",attr)
+      print $4, attr
+    }' \
+  | awk '!seen[$1]++' \
+  > genes_MM/${s}_R2.read_gene.tsv
+done
+
+### 14. Check duplicated read IDs
+for f in genes_MM/*_R1.read_gene.tsv genes_MM/*_R2.read_gene.tsv
+do
+  dups=$(cut -f1 "$f" | sort | uniq -d | wc -l)
+  echo "$f : $dups duplicated read IDs"
+done
+
+### 15. Make unique gene list for each sample
+for s in M1 M2 M3 S1 S2 S3
+do
+  cat genes_MM/${s}_R1.read_gene.tsv genes_MM/${s}_R2.read_gene.tsv \
+  | cut -f2 \
+  | sort -u \
+  > genes_MM/${s}.genes
+done
+
+wc -l genes_MM/*.genes
+
+### 16. Create gene read count files
+for s in M1 M2 M3 S1 S2 S3
+do
+  cat genes_MM/${s}_R1.read_gene.tsv genes_MM/${s}_R2.read_gene.tsv \
+  | cut -f2 \
+  | sort \
+  | uniq -c \
+  | awk 'BEGIN{OFS="\t"}{print $2,$1}' \
+  > counts_MM/${s}.gene_readcounts.tsv
+done
+
+ls counts_MM/*.gene_readcounts.tsv | wc -l
+head counts_MM/M1.gene_readcounts.tsv
+awk '$2 !~ /^[0-9]+$/ {print}' counts_MM/M1.gene_readcounts.tsv | head
+
+for f in counts_MM/*.gene_readcounts.tsv
+do
+  total=$(awk '{sum+=$2} END{print sum}' "$f")
+  echo "$f total_counts: $total"
+done
+
+### 17. Create grouped gene lists
+cat genes_MM/M1.genes genes_MM/M2.genes genes_MM/M3.genes | sort -u > results_MM/M_all.genes
+cat genes_MM/S1.genes genes_MM/S2.genes genes_MM/S3.genes | sort -u > results_MM/S_all.genes
+
+### 18. Apply replicate filter in MM30 heterografts
+cat genes_MM/M1.genes genes_MM/M2.genes genes_MM/M3.genes \
+| sort \
+| uniq -c \
+| awk '$1>=2 {print $2}' \
+> results_MM/M_rep2.genes
+
+### 19. Use self-graft as false positives/background
+cat genes_MM/S1.genes genes_MM/S2.genes genes_MM/S3.genes | sort -u > results_MM/S_background.genes
+
+### 20. Subtract background from MM30 heterograft genes to get final mobile genes
+comm -23 <(sort results_MM/M_rep2.genes) <(sort results_MM/S_background.genes) > results_MM/M_mobile_final.genes
+
+### 21. Count everything
+wc -l results_MM/M_rep2.genes results_MM/S_background.genes results_MM/M_mobile_final.genes
+
+wc -l results_MM/*.genes
+
+
+####Normalized counts 
+cd ~/Karthik
+
+### Clean up previous output
+rm -rf normalized_LG normalized_CA normalized_MM
+mkdir -p normalized_LG normalized_CA normalized_MM
+
+###========================================###
+### LAGENARIA (LG)                         ###
+###========================================###
+
+### Step 1: Compute RPM per sample
+for s in L1 L2 L3 S1 S2 S3
+do
+  total=$(awk '{sum+=$2} END{print sum}' counts/${s}.gene_readcounts.tsv)
+  echo "${s} total counts: ${total}"
+  awk -v lib=${total} 'BEGIN{OFS="\t"}{
+    printf "%s\t%.4f\n", $1, ($2/lib)*1000000
+  }' counts/${s}.gene_readcounts.tsv > normalized_LG/${s}.rpm.tsv
+done
+
+### Step 2: Average RPM across L1, L2, L3
+cat normalized_LG/L1.rpm.tsv normalized_LG/L2.rpm.tsv normalized_LG/L3.rpm.tsv \
+| awk 'BEGIN{OFS="\t"}{sum[$1]+=$2; count[$1]++}
+  END{for(g in sum) printf "%s\t%.4f\n", g, sum[g]/count[g]}' \
+| sort -k2,2nr \
+> normalized_LG/L_avg_rpm_allgenes.tsv
+
+### Step 3: Filter only mobile genes and rank
+awk 'NR==FNR{keep[$1]=1; next} ($1 in keep){print $0}' \
+  Normalization/L_mobile_final.genes \
+  normalized_LG/L_avg_rpm_allgenes.tsv \
+| sort -k2,2nr \
+> Normalization/L_mobile_final_RPM_ranked.tsv
+
+echo "=== Top 20 Lagenaria mobile genes ==="
+head -n 20 Normalization/L_mobile_final_RPM_ranked.tsv
+echo "Total Lagenaria mobile genes:"
+wc -l Normalization/L_mobile_final_RPM_ranked.tsv
+
+
+###========================================###
+### CAROLINA (CA)                          ###
+###========================================###
+
+### Step 1: Compute RPM per sample
+for s in C1 C2 C3 S1 S2 S3
+do
+  total=$(awk '{sum+=$2} END{print sum}' counts_CA/${s}.gene_readcounts.tsv)
+  echo "${s} total counts: ${total}"
+  awk -v lib=${total} 'BEGIN{OFS="\t"}{
+    printf "%s\t%.4f\n", $1, ($2/lib)*1000000
+  }' counts_CA/${s}.gene_readcounts.tsv > normalized_CA/${s}.rpm.tsv
+done
+
+### Step 2: Average RPM across C1, C2, C3
+cat normalized_CA/C1.rpm.tsv normalized_CA/C2.rpm.tsv normalized_CA/C3.rpm.tsv \
+| awk 'BEGIN{OFS="\t"}{sum[$1]+=$2; count[$1]++}
+  END{for(g in sum) printf "%s\t%.4f\n", g, sum[g]/count[g]}' \
+| sort -k2,2nr \
+> normalized_CA/C_avg_rpm_allgenes.tsv
+
+### Step 3: Filter only mobile genes and rank
+awk 'NR==FNR{keep[$1]=1; next} ($1 in keep){print $0}' \
+  Normalization/C_mobile_final.genes \
+  normalized_CA/C_avg_rpm_allgenes.tsv \
+| sort -k2,2nr \
+> Normalization/C_mobile_final_RPM_ranked.tsv
+
+echo "=== Top 20 Carolina mobile genes ==="
+head -n 20 Normalization/C_mobile_final_RPM_ranked.tsv
+echo "Total Carolina mobile genes:"
+wc -l Normalization/C_mobile_final_RPM_ranked.tsv
+
+
+###========================================###
+### MM30                                   ###
+###========================================###
+
+### Step 1: Compute RPM per sample
+for s in M1 M2 M3 S1 S2 S3
+do
+  total=$(awk '{sum+=$2} END{print sum}' counts_MM/${s}.gene_readcounts.tsv)
+  echo "${s} total counts: ${total}"
+  awk -v lib=${total} 'BEGIN{OFS="\t"}{
+    printf "%s\t%.4f\n", $1, ($2/lib)*1000000
+  }' counts_MM/${s}.gene_readcounts.tsv > normalized_MM/${s}.rpm.tsv
+done
+
+### Step 2: Average RPM across M1, M2, M3
+cat normalized_MM/M1.rpm.tsv normalized_MM/M2.rpm.tsv normalized_MM/M3.rpm.tsv \
+| awk 'BEGIN{OFS="\t"}{sum[$1]+=$2; count[$1]++}
+  END{for(g in sum) printf "%s\t%.4f\n", g, sum[g]/count[g]}' \
+| sort -k2,2nr \
+> normalized_MM/M_avg_rpm_allgenes.tsv
+
+### Step 3: Filter only mobile genes and rank
+awk 'NR==FNR{keep[$1]=1; next} ($1 in keep){print $0}' \
+  Normalization/M_mobile_final.genes \
+  normalized_MM/M_avg_rpm_allgenes.tsv \
+| sort -k2,2nr \
+> Normalization/M_mobile_final_RPM_ranked.tsv
+
+echo "=== Top 20 MM30 mobile genes ==="
+head -n 20 Normalization/M_mobile_final_RPM_ranked.tsv
+echo "Total MM30 mobile genes:"
+wc -l Normalization/M_mobile_final_RPM_ranked.tsv
+
+### Final check - all 3 files in Normalization folder
+echo ""
+echo "=== FILES IN NORMALIZATION FOLDER ==="
+ls -lh Normalization/*RPM_ranked.tsv
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+###============================================================###
+###   COUNT MATRIX BUILDING                                   ###
+###   Working directory: ~/Karthik                            ###
+###============================================================###
+
+
+###------------------------------------------------------------###
+### CAROLINA (CA)                                             ###
+### counts_CA/ | samples: C1 C2 C3 (heterograft), S1 S2 S3  ###
+###------------------------------------------------------------###
+
+cd ~/Karthik
+mkdir -p matrix_CA
+
+cat counts_CA/C1.gene_readcounts.tsv \
+    counts_CA/C2.gene_readcounts.tsv \
+    counts_CA/C3.gene_readcounts.tsv \
+    counts_CA/S1.gene_readcounts.tsv \
+    counts_CA/S2.gene_readcounts.tsv \
+    counts_CA/S3.gene_readcounts.tsv \
+| cut -f1 | sort -u > matrix_CA/all_genes.txt
+
+wc -l matrix_CA/all_genes.txt
+
+for s in C1 C2 C3 S1 S2 S3
+do
+  awk 'NR==FNR {count[$1]=$2; next}
+       {print $1"\t"(($1 in count) ? count[$1] : 0)}' \
+    counts_CA/${s}.gene_readcounts.tsv \
+    matrix_CA/all_genes.txt \
+  > matrix_CA/${s}_full.tsv
+  echo "${s}: $(wc -l < matrix_CA/${s}_full.tsv) genes"
+done
+
+paste \
+  matrix_CA/C1_full.tsv \
+  <(cut -f2 matrix_CA/C2_full.tsv) \
+  <(cut -f2 matrix_CA/C3_full.tsv) \
+  <(cut -f2 matrix_CA/S1_full.tsv) \
+  <(cut -f2 matrix_CA/S2_full.tsv) \
+  <(cut -f2 matrix_CA/S3_full.tsv) \
+> matrix_CA/CA_count_matrix_nohdr.tsv
+
+echo -e "gene_id\tC1\tC2\tC3\tS1\tS2\tS3" \
+  | cat - matrix_CA/CA_count_matrix_nohdr.tsv \
+  > matrix_CA/CA_count_matrix.tsv
+
+head -n 6 matrix_CA/CA_count_matrix.tsv
+
+awk 'NR>1{for(i=2;i<=NF;i++) sum[i]+=$i}
+     END{
+       printf "C1\tC2\tC3\tS1\tS2\tS3\n"
+       for(i=2;i<=7;i++) printf "%d\t",sum[i]
+       printf "\n"
+     }' matrix_CA/CA_count_matrix.tsv
+
+
+###------------------------------------------------------------###
+### LAGENARIA (LG)                                            ###
+### counts/ | samples: L1 L2 L3 (heterograft), S1 S2 S3     ###
+###------------------------------------------------------------###
+
+mkdir -p matrix_LG
+
+cat counts/L1.gene_readcounts.tsv \
+    counts/L2.gene_readcounts.tsv \
+    counts/L3.gene_readcounts.tsv \
+    counts/S1.gene_readcounts.tsv \
+    counts/S2.gene_readcounts.tsv \
+    counts/S3.gene_readcounts.tsv \
+| cut -f1 | sort -u > matrix_LG/all_genes.txt
+
+wc -l matrix_LG/all_genes.txt
+
+for s in L1 L2 L3 S1 S2 S3
+do
+  awk 'NR==FNR {count[$1]=$2; next}
+       {print $1"\t"(($1 in count) ? count[$1] : 0)}' \
+    counts/${s}.gene_readcounts.tsv \
+    matrix_LG/all_genes.txt \
+  > matrix_LG/${s}_full.tsv
+  echo "${s}: $(wc -l < matrix_LG/${s}_full.tsv) genes"
+done
+
+paste \
+  matrix_LG/L1_full.tsv \
+  <(cut -f2 matrix_LG/L2_full.tsv) \
+  <(cut -f2 matrix_LG/L3_full.tsv) \
+  <(cut -f2 matrix_LG/S1_full.tsv) \
+  <(cut -f2 matrix_LG/S2_full.tsv) \
+  <(cut -f2 matrix_LG/S3_full.tsv) \
+> matrix_LG/LG_count_matrix_nohdr.tsv
+
+echo -e "gene_id\tL1\tL2\tL3\tS1\tS2\tS3" \
+  | cat - matrix_LG/LG_count_matrix_nohdr.tsv \
+  > matrix_LG/LG_count_matrix.tsv
+
+head -n 4 matrix_LG/LG_count_matrix.tsv
+
+awk 'NR>1{for(i=2;i<=NF;i++) sum[i]+=$i}
+     END{
+       printf "L1\tL2\tL3\tS1\tS2\tS3\n"
+       for(i=2;i<=7;i++) printf "%d\t",sum[i]
+       printf "\n"
+     }' matrix_LG/LG_count_matrix.tsv
+
+
+###------------------------------------------------------------###
+### MM30 HYBRID                                               ###
+### counts_MM/ | samples: M1 M2 M3 (heterograft), S1 S2 S3  ###
+###------------------------------------------------------------###
+
+mkdir -p matrix_MM
+
+cat counts_MM/M1.gene_readcounts.tsv \
+    counts_MM/M2.gene_readcounts.tsv \
+    counts_MM/M3.gene_readcounts.tsv \
+    counts_MM/S1.gene_readcounts.tsv \
+    counts_MM/S2.gene_readcounts.tsv \
+    counts_MM/S3.gene_readcounts.tsv \
+| cut -f1 | sort -u > matrix_MM/all_genes.txt
+
+wc -l matrix_MM/all_genes.txt
+
+for s in M1 M2 M3 S1 S2 S3
+do
+  awk 'NR==FNR {count[$1]=$2; next}
+       {print $1"\t"(($1 in count) ? count[$1] : 0)}' \
+    counts_MM/${s}.gene_readcounts.tsv \
+    matrix_MM/all_genes.txt \
+  > matrix_MM/${s}_full.tsv
+  echo "${s}: $(wc -l < matrix_MM/${s}_full.tsv) genes"
+done
+
+paste \
+  matrix_MM/M1_full.tsv \
+  <(cut -f2 matrix_MM/M2_full.tsv) \
+  <(cut -f2 matrix_MM/M3_full.tsv) \
+  <(cut -f2 matrix_MM/S1_full.tsv) \
+  <(cut -f2 matrix_MM/S2_full.tsv) \
+  <(cut -f2 matrix_MM/S3_full.tsv) \
+> matrix_MM/MM_count_matrix_nohdr.tsv
+
+echo -e "gene_id\tM1\tM2\tM3\tS1\tS2\tS3" \
+  | cat - matrix_MM/MM_count_matrix_nohdr.tsv \
+  > matrix_MM/MM_count_matrix.tsv
+
+head -n 4 matrix_MM/MM_count_matrix.tsv
+
+awk 'NR>1{for(i=2;i<=NF;i++) sum[i]+=$i}
+     END{
+       printf "M1\tM2\tM3\tS1\tS2\tS3\n"
+       for(i=2;i<=7;i++) printf "%d\t",sum[i]
+       printf "\n"
+     }' matrix_MM/MM_count_matrix.tsv
+
+
+
+library(DESeq2)
+
+# Set path to your Mobile_RNA_Counts folder
+setwd("C:/Users/meghana/Downloads/Karthik/Correlation/Mobile_RNA_Counts")
+
+run_deseq2 <- function(matrix_file, het_samples, self_samples, output_prefix) {
+  
+  cat("\n========================================\n")
+  cat("Running DESeq2 for:", output_prefix, "\n")
+  cat("========================================\n")
+  
+  count_matrix <- read.table(matrix_file, header = TRUE,
+                             row.names = 1, sep = "\t")
+  count_matrix <- as.matrix(count_matrix)
+  mode(count_matrix) <- "integer"
+  cat("Matrix dimensions:", nrow(count_matrix), "genes x", ncol(count_matrix), "samples\n")
+  
+  colData <- data.frame(
+    condition = factor(
+      c(rep("heterograft", length(het_samples)),
+        rep("selfgraft",   length(self_samples))),
+      levels = c("selfgraft", "heterograft")
+    ),
+    row.names = c(het_samples, self_samples)
+  )
+  
+  count_matrix <- count_matrix[, rownames(colData)]
+  
+  dds <- DESeqDataSetFromMatrix(countData = count_matrix,
+                                colData = colData,
+                                design = ~ condition)
+  
+  keep <- rowSums(count_matrix >= 1) >= 2
+  dds <- dds[keep, ]
+  cat("Genes after pre-filtering:", nrow(dds), "\n")
+  
+  dds <- DESeq(dds)
+  
+  res <- results(dds,
+                 contrast = c("condition", "heterograft", "selfgraft"),
+                 alpha = 0.05)
+  
+  cat("\n--- Summary ---\n")
+  print(summary(res))
+  
+  up <- subset(res, padj < 0.05 & log2FoldChange > 0 & !is.na(padj))
+  cat("Mobile gene candidates (upregulated in heterograft):", nrow(up), "\n")
+  
+  dir.create(output_prefix, showWarnings = FALSE)
+  write.csv(as.data.frame(res),
+            paste0(output_prefix, "/DESeq2_all_results.csv"))
+  write.csv(as.data.frame(up)[order(as.data.frame(up)$log2FoldChange, decreasing = TRUE), ],
+            paste0(output_prefix, "/DESeq2_mobile_candidates.csv"))
+  writeLines(rownames(up),
+             paste0(output_prefix, "/DESeq2_mobile_geneIDs.txt"))
+  
+  cat("Files saved to:", output_prefix, "\n")
+  return(res)
+}
+
+# Run all three
+res_LG <- run_deseq2(
+  matrix_file   = "LG_count_matrix.tsv",
+  het_samples   = c("L1","L2","L3"),
+  self_samples  = c("S1","S2","S3"),
+  output_prefix = "results_LG"
+)
+
+res_CA <- run_deseq2(
+  matrix_file   = "CA_count_matrix.tsv",
+  het_samples   = c("C1","C2","C3"),
+  self_samples  = c("S1","S2","S3"),
+  output_prefix = "results_CA"
+)
+
+res_MM <- run_deseq2(
+  matrix_file   = "MM_count_matrix.tsv",
+  het_samples   = c("M1","M2","M3"),
+  self_samples  = c("S1","S2","S3"),
+  output_prefix = "results_MM"
+)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
