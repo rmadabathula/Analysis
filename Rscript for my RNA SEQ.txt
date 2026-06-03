@@ -389,3 +389,153 @@ pheatmap(log_tpm,
          main = "Heatmap of TPM values for Selected Arabidopsis genes")
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+FINAL DEG SCRIPT
+
+install.packages("BiocManager")
+BiocManager::install("topGO")
+BiocManager::install("DESeq2")
+BiocManager::install("clusterProfiler")
+install.packages("ggplot2")
+install.packages("pheatmap")
+install.packages("GOplot")
+install.packages("tidyverse")
+install.packages("readxl")
+install.packages("writexl")
+install.packages(c("csv", "csvread"))
+install.packages("ggforce")
+BiocManager::install("EnhancedVolcano")
+BiocManager::install("DESeq2")
+
+library(BiocManager)
+library(DESeq2)
+library(ggplot2)
+library(pheatmap)
+library(GOplot)
+library(topGO)
+library(clusterProfiler)
+library(ggforce)
+
+sampleInfo <- data.frame(
+  row.names = c("UG_WF1", "UG_WF2", "UG_WF3", "MM30_WF1", "MM30_WF2", "MM30_WF3"),
+  condition = c("Treatment_1", "Treatment_1", "Treatment_1", "Treatment_5", "Treatment_5", "Treatment_5")
+)
+
+# ── Matrix from methods 1 & 2 ────────────────────────────────────────────────
+
+# Load the counts matrix
+watermelon <- read.csv("countsdata.csv", row.names = 1)
+
+# Subset the count matrix to include only the samples in sampleInfo
+watermelon <- watermelon[, rownames(sampleInfo)]
+
+# Load the metadata
+watermelondata <- read.csv("sampleinfo.csv", row.names = 1)
+
+# Filter metadata for relevant samples — drop=FALSE preserves data frame structure
+watermelondata <- watermelondata[rownames(sampleInfo), , drop = FALSE]
+
+head(watermelondata)
+
+# Checks
+all(colnames(watermelon) %in% rownames(watermelondata))  # Should be TRUE
+all(colnames(watermelon) == rownames(watermelondata))     # Should be TRUE
+
+
+# ── Differential Expression Analysis ─────────────────────────────────────────
+
+dds <- DESeqDataSetFromMatrix(
+  countData = round(watermelon),
+  colData   = watermelondata,
+  design    = ~Condition
+)
+
+dds <- DESeq(dds)
+plotDispEsts(dds)
+par(mar = c(8, 5, 2, 2))
+boxplot(log10(assays(dds)[["cooks"]]), range = 0, las = 2)
+
+
+# ── Unfiltered Results ────────────────────────────────────────────────────────
+
+watermelon_effects <- results(dds, contrast = c("Condition", "Treatment_5", "Treatment_1"))
+
+summary(watermelon_effects)
+plotMA(watermelon_effects)
+plotMA(watermelon_effects,
+       alpha     = 0.05,
+       colSig    = "blue",
+       colNonSig = "black",
+       main      = "Treatment_5 vs Treatment_1")
+abline(h = c(-1, 1), col = "red", lwd = 2)    # ✅ Fixed
+
+# Save unfiltered results
+write.csv(watermelon_effects,
+          file = "Treatment_5vsTreatment_1.csv")
+write.table(watermelon_effects,
+            file      = "Treatment_5vsTreatment_1.tsv",
+            sep       = "\t",
+            col.names = NA,
+            quote     = FALSE)
+
+
+# ── Filtered Results (padj < 0.05 & |log2FC| > 1) ────────────────────────────  # ✅ Fixed comment
+
+watermelon_effects_filtered <- subset(
+  watermelon_effects,
+  padj < 0.05 & abs(log2FoldChange) > 1
+)
+
+# Order by log2FoldChange and padj
+watermelon_effects_filtered <- watermelon_effects_filtered[
+  order(watermelon_effects_filtered$log2FoldChange,
+        watermelon_effects_filtered$padj), ]
+
+summary(watermelon_effects_filtered)
+plotMA(watermelon_effects_filtered)
+abline(h = c(-1, 1), col = "red", lwd = 2)    # ✅ Fixed
+
+# Remove any remaining NA rows in padj
+watermelon_effects_filtered <- watermelon_effects_filtered[
+  !is.na(watermelon_effects_filtered$padj), ]
+
+summary(watermelon_effects_filtered)
+
+# Save filtered results
+write.csv(watermelon_effects_filtered,
+          file = "MM30WF_vs_UGWF_filtered.csv")
+write.table(watermelon_effects_filtered,
+            file      = "MM30WF_vs_UGWF_filtered.tsv",
+            sep       = "\t",
+            col.names = NA,
+            quote     = FALSE)
