@@ -1,0 +1,88 @@
+# ==============================================================================
+# TWO-WAY ANOVA WITH INTERACTION & FDR FOR METABOLOMICS
+# Alkaloids - 154 metabolites
+# ==============================================================================
+library(tidyr)
+library(dplyr)
+
+raw_data <- read.csv("Alkaloids_rep.csv", row.names = 1, check.names = FALSE)
+cat("Total metabolites loaded:", nrow(raw_data), "\n")
+num_metabolites <- nrow(raw_data)
+
+graft_factor <- factor(c(
+  rep("UG", 3), rep("SS", 3), rep("LG30", 3), rep("MM30", 3),
+  rep("UG", 3), rep("SS", 3), rep("LG30", 3), rep("MM30", 3)
+), levels = c("UG", "SS", "LG30", "MM30"))
+
+whitefly_factor <- factor(c(
+  rep("Control", 12), rep("Whitefly", 12)
+), levels = c("Control", "Whitefly"))
+
+unique_groups <- c("UG","SS","LG30","MM30","UGWF","SSWF","LG30WF","MM30WF")
+one_way_group <- factor(c(
+  rep("UG",3), rep("SS",3), rep("LG30",3), rep("MM30",3),
+  rep("UGWF",3), rep("SSWF",3), rep("LG30WF",3), rep("MM30WF",3)
+), levels = unique_groups)
+
+mean_matrix <- matrix(NA, nrow=num_metabolites, ncol=8, dimnames=list(rownames(raw_data), unique_groups))
+sd_matrix   <- matrix(NA, nrow=num_metabolites, ncol=8, dimnames=list(rownames(raw_data), unique_groups))
+sem_matrix  <- matrix(NA, nrow=num_metabolites, ncol=8, dimnames=list(rownames(raw_data), unique_groups))
+
+p_graft       <- rep(NA, num_metabolites); names(p_graft)       <- rownames(raw_data)
+p_whitefly    <- rep(NA, num_metabolites); names(p_whitefly)    <- rownames(raw_data)
+p_interaction <- rep(NA, num_metabolites); names(p_interaction) <- rownames(raw_data)
+
+for (i in 1:num_metabolites) {
+  metabolite_name <- rownames(raw_data)[i]
+  row_values      <- as.numeric(raw_data[i, ])
+  
+  df_one <- data.frame(Intensity = row_values, Group = one_way_group)
+  for (g in unique_groups) {
+    group_data <- df_one$Intensity[df_one$Group == g]
+    mean_matrix[metabolite_name, g] <- mean(group_data, na.rm=TRUE)
+    sd_matrix[metabolite_name, g]   <- sd(group_data,   na.rm=TRUE)
+    sem_matrix[metabolite_name, g]  <- sd(group_data,   na.rm=TRUE) / sqrt(sum(!is.na(group_data)))
+  }
+  
+  if(sd(row_values, na.rm=TRUE) == 0 || all(is.na(row_values))) {
+    next
+  }
+  
+  df_two <- data.frame(Expression=row_values, Graft=graft_factor, Whitefly=whitefly_factor)
+  two_way_fit <- aov(Expression ~ Graft * Whitefly, data=df_two)
+  anova_table <- summary(two_way_fit)[[1]]
+  rownames(anova_table) <- trimws(rownames(anova_table))
+  
+  p_graft[metabolite_name]       <- anova_table["Graft",         "Pr(>F)"]
+  p_whitefly[metabolite_name]    <- anova_table["Whitefly",      "Pr(>F)"]
+  p_interaction[metabolite_name] <- anova_table["Graft:Whitefly","Pr(>F)"]
+}
+
+fdr_graft       <- p.adjust(p_graft,       method="BH")
+fdr_whitefly    <- p.adjust(p_whitefly,    method="BH")
+fdr_interaction <- p.adjust(p_interaction, method="BH")
+
+colnames(mean_matrix) <- paste0(unique_groups, "_Mean")
+colnames(sd_matrix)   <- paste0(unique_groups, "_SD")
+colnames(sem_matrix)  <- paste0(unique_groups, "_SEM")
+
+master_results <- data.frame(
+  Metabolite=rownames(raw_data),
+  mean_matrix, sd_matrix, sem_matrix,
+  Raw_P_Graft=p_graft, FDR_P_Graft=fdr_graft,
+  Raw_P_Whitefly=p_whitefly, FDR_P_Whitefly=fdr_whitefly,
+  Raw_P_Interaction=p_interaction, FDR_P_Interaction=fdr_interaction,
+  check.names=FALSE)
+
+narrowed_results <- subset(master_results,
+  FDR_P_Graft < 0.05 | FDR_P_Whitefly < 0.05 | FDR_P_Interaction < 0.05)
+
+write.csv(master_results,   "Alkaloids_twoway_all_results.csv",         row.names=FALSE)
+write.csv(narrowed_results, "Alkaloids_twoway_significant_only.csv",    row.names=FALSE)
+
+cat("\n✅ Alkaloids Complete!\n")
+cat("Total tested:                    ", num_metabolites, "\n")
+cat("Significant Graft effect:        ", sum(fdr_graft       < 0.05, na.rm=TRUE), "\n")
+cat("Significant Whitefly effect:     ", sum(fdr_whitefly    < 0.05, na.rm=TRUE), "\n")
+cat("Significant Interaction effect:  ", sum(fdr_interaction < 0.05, na.rm=TRUE), "\n")
+cat("Total significant in ANY effect: ", nrow(narrowed_results), "\n")
