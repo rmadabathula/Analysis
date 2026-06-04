@@ -86,3 +86,65 @@ cat("Significant Graft effect:        ", sum(fdr_graft       < 0.05, na.rm=TRUE)
 cat("Significant Whitefly effect:     ", sum(fdr_whitefly    < 0.05, na.rm=TRUE), "\n")
 cat("Significant Interaction effect:  ", sum(fdr_interaction < 0.05, na.rm=TRUE), "\n")
 cat("Total significant in ANY effect: ", nrow(narrowed_results), "\n")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# ==============================================================================
+# TUKEY POST-HOC PAIRS - Alkaloids
+# ==============================================================================
+raw_data     <- read.csv("Alkaloids_rep.csv", row.names=1, check.names=FALSE)
+existing_all <- read.csv("Alkaloids_twoway_all_results.csv", check.names=FALSE)
+
+graft_factor <- factor(c(
+  rep("UG",3), rep("SS",3), rep("LG30",3), rep("MM30",3),
+  rep("UG",3), rep("SS",3), rep("LG30",3), rep("MM30",3)
+), levels=c("UG","SS","LG30","MM30"))
+
+whitefly_factor <- factor(c(
+  rep("Control",12), rep("Whitefly",12)
+), levels=c("Control","Whitefly"))
+
+tukey_interaction_pairs <- rep("No specific pair differences", nrow(raw_data))
+names(tukey_interaction_pairs) <- rownames(raw_data)
+
+for (i in 1:nrow(raw_data)) {
+  metabolite_name <- rownames(raw_data)[i]
+  row_values      <- as.numeric(raw_data[i, ])
+  
+  if(sd(row_values, na.rm=TRUE) == 0 || all(is.na(row_values))) { next }
+  
+  df_two <- data.frame(Expression=row_values, Graft=graft_factor, Whitefly=whitefly_factor)
+  two_way_fit  <- aov(Expression ~ Graft * Whitefly, data=df_two)
+  tukey_output <- TukeyHSD(two_way_fit)$`Graft:Whitefly`
+  sig_pairs    <- rownames(tukey_output)[tukey_output[,"p adj"] < 0.05]
+  
+  if(length(sig_pairs) > 0) {
+    tukey_interaction_pairs[metabolite_name] <- paste(sig_pairs, collapse="; ")
+  }
+}
+
+pairs_df <- data.frame(
+  Metabolite                   = names(tukey_interaction_pairs),
+  Significant_Interaction_Pairs = tukey_interaction_pairs,
+  stringsAsFactors = FALSE)
+
+updated_master   <- merge(existing_all, pairs_df, by="Metabolite", all.x=TRUE)
+updated_narrowed <- subset(updated_master,
+  FDR_P_Graft < 0.05 | FDR_P_Whitefly < 0.05 | FDR_P_Interaction < 0.05)
+
+write.csv(updated_master,   "Alkaloids_twoway_all_results.csv",      row.names=FALSE)
+write.csv(updated_narrowed, "Alkaloids_twoway_significant_only.csv", row.names=FALSE)
+cat("\n✅ Alkaloids Tukey pairs appended!\n")
