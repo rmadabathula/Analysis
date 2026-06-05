@@ -442,6 +442,114 @@ cat genes/S25.genes genes/S26.genes genes/S27.genes | sort -u > results/WP_white
 ###34.Check merged gene lists
 wc -l results/*.genes
 
+FOR UNGRAFTED, HOMOGRAFT AND HETEROGRAFT (UNGRAFT AND HOMOGRAFT SERVE AS FALSE POSITIVES) APPLYING >2REPLICATE FILTER IN HETEROGRAFTS AND REMOVING FALSE POSITIVES
+
+cd ~/Ramya/Mobile/Final_filtering/results/Total
+
+###create the combined background files:
+cat ../FP_control.genes ../UG_control.genes | sort -u > FP_UG_control.genes
+cat ../FP_whitefly.genes ../UG_whitefly.genes | sort -u > FP_UG_whitefly.genes
+
+###subtract them from heterograft genes to get final mobile genes:
+comm -23 <(sort ../hetero_control_rep2.genes) <(sort FP_UG_control.genes) > mobile_control.genes
+
+comm -23 <(sort ../hetero_whitefly_rep2.genes) <(sort FP_UG_whitefly.genes) > mobile_whitefly.genes
+
+###count everything:
+wc -l ../hetero_control_rep2.genes ../FP_control.genes ../UG_control.genes FP_UG_control.genes mobile_control.genes
+
+wc -l ../hetero_whitefly_rep2.genes ../FP_whitefly.genes ../UG_whitefly.genes FP_UG_whitefly.genes mobile_whitefly.genes
+
+#################### UPDATED ANALYSIS BY INCLUDING UGWF, SGWF ALSO AS FALSE POSITIVES ALONG WITH UG, SG ################################
+
+cd ~/Ramya/Mobile/Lagenaria_mobile/results
+
+# Replicate filter >=2
+cat ../genes/S10.genes ../genes/S11.genes ../genes/S12.genes | sort | uniq -c | awk '$1>=2 {print $2}' > LG_control_rep2.genes
+cat ../genes/S25.genes ../genes/S26.genes ../genes/S27.genes | sort | uniq -c | awk '$1>=2 {print $2}' > LGWF_rep2.genes
+
+# Master FP (all 4 non-Lagenaria groups)
+cat UG_control.genes SG_control.genes UGWF.genes SGWF.genes | sort -u > master_FP.genes
+
+# Subtract
+comm -23 LG_control_rep2.genes master_FP.genes > mobile_control.genes
+comm -23 LGWF_rep2.genes master_FP.genes > mobile_whitefly.genes
+
+# Count everything
+echo "=== Control ==="
+wc -l LG_control.genes LG_control_rep2.genes master_FP.genes mobile_control.genes
+
+echo "=== Whitefly ==="
+wc -l LGWF.genes LGWF_rep2.genes master_FP.genes mobile_whitefly.genes
+
+cd ~/Ramya/Mobile/Lagenaria_mobile/results
+
+# Common in both control and whitefly
+comm -12 <(sort mobile_control.genes) <(sort mobile_whitefly.genes) > mobile_common.genes
+
+# Control specific (only in control, not in whitefly)
+comm -23 <(sort mobile_control.genes) <(sort mobile_whitefly.genes) > mobile_control_specific.genes
+
+# Whitefly specific (only in whitefly, not in control)
+comm -13 <(sort mobile_control.genes) <(sort mobile_whitefly.genes) > mobile_whitefly_specific.genes
+
+# Count all
+wc -l mobile_control.genes mobile_whitefly.genes mobile_common.genes mobile_control_specific.genes mobile_whitefly_specific.genes
+
+
+############
+
+cd ~/Ramya/Mobile/Lagenaria_mobile/results
+
+# For control mobile genes
+echo "gene S1 S2 S3 S4 S5 S6 S10 S11 S12 S16 S17 S18 S19 S20 S21 S25 S26 S27" | tr ' ' '\t' > mobile_control_counts_matrix.tsv
+
+while read gene
+do
+  row="$gene"
+  for s in S1 S2 S3 S4 S5 S6 S10 S11 S12 S16 S17 S18 S19 S20 S21 S25 S26 S27
+  do
+    count=$(grep -w "^$gene" ../counts/${s}.gene_readcounts.tsv 2>/dev/null | awk '{print $2}')
+    if [ -z "$count" ]; then count=0; fi
+    row="$row\t$count"
+  done
+  echo -e "$row"
+done < LG_mobile_control.genes >> mobile_control_counts_matrix.tsv
+
+# For whitefly mobile genes
+echo "gene S1 S2 S3 S4 S5 S6 S10 S11 S12 S16 S17 S18 S19 S20 S21 S25 S26 S27" | tr ' ' '\t' > mobile_whitefly_counts_matrix.tsv
+
+while read gene
+do
+  row="$gene"
+  for s in S1 S2 S3 S4 S5 S6 S10 S11 S12 S16 S17 S18 S19 S20 S21 S25 S26 S27
+  do
+    count=$(grep -w "^$gene" ../counts/${s}.gene_readcounts.tsv 2>/dev/null | awk '{print $2}')
+    if [ -z "$count" ]; then count=0; fi
+    row="$row\t$count"
+  done
+  echo -e "$row"
+done < LG_mobile_whitefly.genes >> mobile_whitefly_counts_matrix.tsv
+
+echo "=== Control mobile counts matrix ==="
+cat mobile_control_counts_matrix.tsv
+
+echo "=== Whitefly mobile counts matrix ==="
+cat mobile_whitefly_counts_matrix.tsv
+
+###########
+
+cd ~/Ramya/Mobile/Lagenaria_mobile/results
+
+# Check files exist
+ls -lh mobile_control_counts_matrix.tsv mobile_whitefly_counts_matrix.tsv
+
+# Also make a combined matrix with all mobile genes (union)
+cat LG_mobile_control.genes LG_mobile_whitefly.genes | sort -u > all_mobile_genes.genes
+wc -l all_mobile_genes.genes
+
+
+
 ###35.Go to corrected counts folder
 cd ~/Ramya/Mobile/Final_filtering/counts
 
