@@ -1,0 +1,379 @@
+cat > ~/Lagenaria_mobile_Main/SNP_validation_pipeline.sh << 'EOF'
+#!/bin/bash
+# =============================================================================
+# SNP Validation Pipeline for Mobile RNA Analysis
+# =============================================================================
+# Purpose: Validate candidate mobile genes by checking species-specific SNPs
+# 
+# Logic:
+# 1. For each mobile gene (Lagenaria), find its watermelon ortholog
+# 2. Align Lagenaria vs Watermelon gene sequences
+# 3. Find SNP positions where sequences differ
+# 4. Convert SNP positions to watermelon genome coordinates
+# 5. Check RNA-seq reads at those positions in all samples
+# 6. A gene is SNP-validated if:
+#    - LG/LGWF samples show Lagenaria allele at a position
+#    - ALL control samples (UG,SG,UGWF,SGWF) show 0 Lagenaria allele
+#
+# Sample groups:
+# UG   = S1,S2,S3    (ungrafted, no whitefly)        - FALSE POSITIVE
+# SG   = S4,S5,S6    (self-grafted, no whitefly)      - FALSE POSITIVE
+# LG   = S10,S11,S12 (Lagenaria grafted, no whitefly) - MOBILE CANDIDATE
+# UGWF = S16,S17,S18 (ungrafted, whitefly)            - FALSE POSITIVE
+# SGWF = S19,S20,S21 (self-grafted, whitefly)         - FALSE POSITIVE
+# LGWF = S25,S26,S27 (Lagenaria grafted, whitefly)    - MOBILE CANDIDATE
+#
+# Requirements: samtools, bedtools, mafft, bcftools, python3
+# =============================================================================
+
+# ---- SET PATHS ----
+BASE_DIR=~/Lagenaria_mobile_Main
+GENOME_DIR=$BASE_DIR/Genome
+BAM_DIR=$BASE_DIR/bam
+SNP_DIR=$BASE_DIR/SNP_analysis
+LG_GENOME=$GENOME_DIR/USVL1VR-Ls_genome_v1.fa
+WM_GENOME=$GENOME_DIR/WCG_genome_v2.5.fa
+LG_GFF=$GENOME_DIR/USVL1VR-Ls_v1.gff3
+WM_GFF=$GENOME_DIR/WCG_v2.5.gff3
+CONTROL_CSV=$BASE_DIR/LG3_Control_mobile.csv
+WHITEFLY_CSV=$BASE_DIR/LG_Whitefly_mobile.csv
+
+mkdir -p $SNP_DIR
+cd $SNP_DIR
+
+echo "============================================"
+echo "STEP 1: Index genomes"
+echo "============================================"
+samtools faidx $LG_GENOME
+samtools faidx $WM_GENOME
+
+# ============================================
+# FUNCTION: Run SNP analysis for a gene set
+# ============================================
+run_snp_analysis() {
+    PREFIX=$1        # control or whitefly
+    CSV_FILE=$2      # input CSV with LG gene and WM ortholog
+    LG_SAMPLES=$3    # LG sample BAM files
+    CTRL_SAMPLES=$4  # Control sample BAM files
+
+    echo "============================================"
+    echo "Processing: $PREFIX"
+    echo "============================================"
+
+    # ---- Extract gene IDs ----
+    tail -n +2 $CSV_FILE | cut -d',' -f1 > ${PREFIX}_LG_genes.txt
+
+    # ---- Extract ortholog pairs ----
+    tail -n +2 $CSV_FILE | \
+    awk -F',' '{
+        gsub(/"/, "", $2)
+        split($2, a, " ")
+        gsub(/ /, "", a[1])
+        if(a[1] != "") print $1"\t"a[1]
+        else print $1"\t"
+    }' > ${PREFIX}_ortholog_pairs.txt
+
+    echo "Gene pairs extracted"
+
+    # ---- Extract Lagenaria sequences ----
+    grep -Ff ${PREFIX}_LG_genes.txt $LG_GFF | grep $'\tgene\t' | \
+    awk 'BEGIN{OFS="\t"}{
+        id=$9; gsub(/.*ID=/,"",id); gsub(/;.*/,"",id)
+        print $1, $4-1, $5, id, ".", $7
+    }' > ${PREFIX}_LG_genes.bed
+
+    bedtools getfasta \
+        -fi $LG_GENOME \
+        -bed ${PREFIX}_LG_genes.bed \
+        -s -name \
+        > ${PREFIX}_LG_sequences.fa
+
+    echo "Lagenaria sequences: $(grep '>' ${PREFIX}_LG_sequences.fa | wc -l)"
+
+    # ---- Extract Watermelon sequences ----
+    cat ${PREFIX}_ortholog_pairs.txt | \
+        awk '{if($2!="") print $2}' | \
+        grep -oP 'ClCG\d+G\d+' > ${PREFIX}_WM_genes_stripped.txt
+
+    grep -Ff ${PREFIX}_WM_genes_stripped.txt $WM_GFF | grep $'\tgene\t' | \
+    awk 'BEGIN{OFS="\t"}{
+        id=$9; gsub(/.*ID=/,"",id); gsub(/;.*/,"",id)
+        print $1, $4-1, $5, id, ".", $7
+    }' > ${PREFIX}_WM_genes.bed
+
+    bedtools getfasta \
+        -fi $WM_GENOME \
+        -bed ${PREFIX}_WM_genes.bed \
+        -s -name \
+        > ${PREFIX}_WM_sequences.fa
+
+    echo "Watermelon sequences: $(grep '>' ${PREFIX}_WM_sequences.fa | wc -l)"
+
+    # ---- Align each gene pair ----
+    mkdir -p ${PREFIX}_alignments ${PREFIX}_snps
+
+    while read lg wm
+    do
+        if [ -z "$wm" ]; then continue; fi
+        wm_stripped=$(echo $wm | grep -oP 'ClCG\d+G\d+')
+
+        awk -v id="$lg" '/^>/{found=($0~id)?1:0} found{print}' \
+            ${PREFIX}_LG_sequences.fa > temp_LG.fa
+        awk -v id="$wm_stripped" '/^>/{found=($0~id)?1:0} found{print}' \
+            ${PREFIX}_WM_sequences.fa > temp_WM.fa
+
+        if [ ! -s temp_LG.fa ] || [ ! -s temp_WM.fa ]; then
+            continue
+        fi
+
+        cat temp_LG.fa temp_WM.fa > temp_combined.fa
+        mafft --quiet temp_combined.fa > ${PREFIX}_alignments/${lg}_vs_${wm_stripped}.aln
+
+    done < ${PREFIX}_ortholog_pairs.txt
+
+    echo "Alignments done: $(ls ${PREFIX}_alignments/*.aln | wc -l)"
+
+    # ---- Find SNPs from alignments ----
+python3 << PYEOF
+import os, glob
+
+alignment_dir = "${PREFIX}_alignments"
+snp_dir = "${PREFIX}_snps"
+
+for aln_file in glob.glob(f"{alignment_dir}/*.aln"):
+    basename = os.path.basename(aln_file).replace(".aln", "")
+    if basename.endswith("vs_"):
+        continue
+    sequences = {}
+    current_id = None
+    with open(aln_file) as f:
+        for line in f:
+            line = line.strip()
+            if line.startswith(">"):
+                current_id = line[1:]
+                sequences[current_id] = ""
+            else:
+                sequences[current_id] += line
+    if len(sequences) < 2:
+        continue
+    ids = list(sequences.keys())
+    seq1 = sequences[ids[0]]
+    seq2 = sequences[ids[1]]
+    snps = []
+    pos = 0
+    for a, b in zip(seq1, seq2):
+        if a != '-': pos += 1
+        if a != b and a != '-' and b != '-' and a != 'N' and b != 'N':
+            snps.append((pos, a, b))
+    with open(f"{snp_dir}/{basename}.snps.txt", "w") as out:
+        out.write("Gene_pair\tPosition\tLagenaria\tWatermelon\n")
+        for pos, lg, wm in snps:
+            out.write(f"{basename}\t{pos}\t{lg}\t{wm}\n")
+PYEOF
+
+    echo "SNPs found"
+
+    # ---- Convert to genome coordinates ----
+python3 << PYEOF
+import os, glob
+
+wm_coords = {}
+with open("${PREFIX}_WM_genes.bed") as f:
+    for line in f:
+        parts = line.strip().split("\t")
+        chrom, start, end, gene_id, dot, strand = parts
+        wm_coords[gene_id] = (chrom, int(start), int(end), strand)
+
+outfile = open("${PREFIX}_SNP_genome_coords.tsv", "w")
+outfile.write("LG_gene\tWM_gene\tWM_chrom\tWM_genome_pos\tLG_allele\tWM_allele\n")
+
+for aln_file in glob.glob("${PREFIX}_alignments/*.aln"):
+    basename = os.path.basename(aln_file).replace(".aln", "")
+    if basename.endswith("vs_"):
+        continue
+    snp_file = f"${PREFIX}_snps/{basename}.snps.txt"
+    if not os.path.exists(snp_file):
+        continue
+    parts = basename.split("_vs_")
+    lg_gene = parts[0]
+    wm_gene = parts[1]
+    if wm_gene not in wm_coords:
+        continue
+    chrom, start, end, strand = wm_coords[wm_gene]
+    sequences = {}
+    current_id = None
+    with open(aln_file) as f:
+        for line in f:
+            line = line.strip()
+            if line.startswith(">"):
+                current_id = line[1:].split("::")[0]
+                sequences[current_id] = ""
+            else:
+                sequences[current_id] += line
+    if len(sequences) < 2:
+        continue
+    ids = list(sequences.keys())
+    seq_lg = sequences[ids[0]]
+    seq_wm = sequences[ids[1]]
+    lg_pos = 0
+    wm_pos = 0
+    lg_to_wm = {}
+    for a, b in zip(seq_lg, seq_wm):
+        if a != '-': lg_pos += 1
+        if b != '-': wm_pos += 1
+        if a != '-':
+            lg_to_wm[lg_pos] = wm_pos if b != '-' else None
+    with open(snp_file) as f:
+        next(f)
+        for line in f:
+            parts = line.strip().split("\t")
+            lg_snp_pos = int(parts[1])
+            lg_allele = parts[2]
+            wm_allele = parts[3]
+            wm_snp_pos = lg_to_wm.get(lg_snp_pos)
+            if wm_snp_pos is None:
+                continue
+            if strand == "+":
+                genome_pos = start + wm_snp_pos
+            else:
+                genome_pos = end - wm_snp_pos
+            outfile.write(f"{lg_gene}\t{wm_gene}\t{chrom}\t{genome_pos}\t{lg_allele}\t{wm_allele}\n")
+outfile.close()
+PYEOF
+
+    echo "Genome coordinates: $(wc -l < ${PREFIX}_SNP_genome_coords.tsv) SNPs"
+
+    # ---- Run mpileup ----
+    tail -n +2 ${PREFIX}_SNP_genome_coords.tsv | \
+        awk '{print $3"\t"$4}' > ${PREFIX}_snp_positions.bed
+
+    samtools mpileup \
+        -l ${PREFIX}_snp_positions.bed \
+        -f $WM_GENOME \
+        $CTRL_SAMPLES \
+        $LG_SAMPLES \
+        2>/dev/null > ${PREFIX}_snp_pileup.txt
+
+    echo "Pileup done: $(wc -l < ${PREFIX}_snp_pileup.txt) positions"
+
+    # ---- Analyze pileup ----
+python3 << PYEOF
+import os
+
+snp_info = {}
+with open("${PREFIX}_SNP_genome_coords.tsv") as f:
+    next(f)
+    for line in f:
+        parts = line.strip().split("\t")
+        lg_gene, wm_gene, chrom, pos, lg_allele, wm_allele = parts
+        snp_info[(chrom, pos)] = (lg_gene, wm_gene, lg_allele, wm_allele)
+
+def count_allele(pileup_str, allele):
+    return pileup_str.upper().count(allele.upper())
+
+# First 12 samples = controls, last 3 = LG/LGWF
+n_ctrl = 12
+LG_idx = [12, 13, 14]
+ctrl_idx = list(range(12))
+
+results = []
+with open("${PREFIX}_snp_pileup.txt") as f:
+    for line in f:
+        fields = line.strip().split("\t")
+        if len(fields) < 6:
+            continue
+        chrom = fields[0]
+        pos = fields[1]
+        key = (chrom, pos)
+        if key not in snp_info:
+            continue
+        lg_gene, wm_gene, lg_allele, wm_allele = snp_info[key]
+        pileups = []
+        for i in range(15):
+            idx = 3 + i*3 + 1
+            if idx < len(fields):
+                pileups.append(fields[idx])
+            else:
+                pileups.append("")
+        lg_counts = [count_allele(pileups[i], lg_allele) for i in LG_idx]
+        ctrl_counts = [count_allele(pileups[i], lg_allele) for i in ctrl_idx]
+        total_lg = sum(lg_counts)
+        total_ctrl = sum(ctrl_counts)
+        if total_lg > 0 and total_ctrl == 0:
+            results.append({
+                "lg_gene": lg_gene,
+                "chrom": chrom,
+                "pos": pos,
+                "lg_allele": lg_allele,
+                "wm_allele": wm_allele,
+                "r1": lg_counts[0],
+                "r2": lg_counts[1],
+                "r3": lg_counts[2]
+            })
+
+with open("${PREFIX}_SNP_final_validated.tsv", "w") as out:
+    out.write("LG_gene\tChrom\tPos\tLG_allele\tWM_allele\tRep1_reads\tRep2_reads\tRep3_reads\n")
+    for r in results:
+        out.write(f"{r['lg_gene']}\t{r['chrom']}\t{r['pos']}\t{r['lg_allele']}\t{r['wm_allele']}\t{r['r1']}\t{r['r2']}\t{r['r3']}\n")
+
+genes = {}
+for r in results:
+    g = r["lg_gene"]
+    if g not in genes:
+        genes[g] = {"positions": 0, "r1": 0, "r2": 0, "r3": 0, "rep2": 0}
+    genes[g]["positions"] += 1
+    genes[g]["r1"] += r["r1"]
+    genes[g]["r2"] += r["r2"]
+    genes[g]["r3"] += r["r3"]
+    if sum([r["r1"]>0, r["r2"]>0, r["r3"]>0]) >= 2:
+        genes[g]["rep2"] += 1
+
+print(f"Total validated positions: {len(results)}")
+for g, d in sorted(genes.items(), key=lambda x: -x[1]["positions"]):
+    print(f"{g}: {d['positions']} positions, rep1={d['r1']}, rep2={d['r2']}, rep3={d['r3']}, in_2reps={d['rep2']}")
+PYEOF
+
+    echo "============================================"
+    echo "$PREFIX analysis complete!"
+    echo "Results saved: ${PREFIX}_SNP_final_validated.tsv"
+    echo "============================================"
+}
+
+# ============================================
+# RUN CONTROL ANALYSIS
+# LG samples: S10, S11, S12
+# Controls: S1-S6 (UG,SG) + S16-S21 (UGWF,SGWF)
+# ============================================
+echo "Running CONTROL mobile gene SNP validation..."
+
+CTRL_BAMS="$BAM_DIR/S1_trimmed_vsWM.bam $BAM_DIR/S2_trimmed_vsWM.bam $BAM_DIR/S3_trimmed_vsWM.bam \
+           $BAM_DIR/S4_trimmed_vsWM.bam $BAM_DIR/S5_trimmed_vsWM.bam $BAM_DIR/S6_trimmed_vsWM.bam \
+           $BAM_DIR/S16_trimmed_vsWM.bam $BAM_DIR/S17_trimmed_vsWM.bam $BAM_DIR/S18_trimmed_vsWM.bam \
+           $BAM_DIR/S19_trimmed_vsWM.bam $BAM_DIR/S20_trimmed_vsWM.bam $BAM_DIR/S21_trimmed_vsWM.bam"
+
+LG_BAMS="$BAM_DIR/S10_trimmed_vsWM.bam $BAM_DIR/S11_trimmed_vsWM.bam $BAM_DIR/S12_trimmed_vsWM.bam"
+
+run_snp_analysis "control" $CONTROL_CSV "$LG_BAMS" "$CTRL_BAMS"
+
+# ============================================
+# RUN WHITEFLY ANALYSIS
+# LGWF samples: S25, S26, S27
+# Controls: S1-S6 (UG,SG) + S16-S21 (UGWF,SGWF)
+# ============================================
+echo "Running WHITEFLY mobile gene SNP validation..."
+
+LGWF_BAMS="$BAM_DIR/S25_trimmed_vsWM.bam $BAM_DIR/S26_trimmed_vsWM.bam $BAM_DIR/S27_trimmed_vsWM.bam"
+
+run_snp_analysis "whitefly" $WHITEFLY_CSV "$LGWF_BAMS" "$CTRL_BAMS"
+
+echo "============================================"
+echo "ALL DONE!"
+echo "Output files:"
+echo "  control_SNP_final_validated.tsv"
+echo "  whitefly_SNP_final_validated.tsv"
+echo "============================================"
+EOF
+
+chmod +x ~/Lagenaria_mobile_Main/SNP_validation_pipeline.sh
+echo "Script saved!"
+ls -lh ~/Lagenaria_mobile_Main/SNP_validation_pipeline.sh
