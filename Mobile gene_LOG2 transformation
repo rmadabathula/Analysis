@@ -1,0 +1,63 @@
+# =============================================================================
+# CSB Mobile Genes - Log2 Transformation
+# Project   : Graft-mobile RNA analysis (Citrullus amarus - USVL246 rootstock)
+# Samples   : S7, S8, S9 (control) | S22, S23, S24 (whitefly)
+# FP groups : UG (S1-S3), SG (S4-S6), UGWF (S16-S18), SGWF (S19-S21)
+# Author    : Ramya
+# Date      : 2026
+# =============================================================================
+
+# Set working directory
+setwd("C:/Users/karthik/Downloads/Ramya-Thesis/CSB_Mobile")
+
+# Confirm working directory and files
+getwd()
+list.files()
+
+# -----------------------------------------------------------------------------
+# CONTROL MOBILE GENES
+# -----------------------------------------------------------------------------
+
+# Read count matrix
+control_csb <- read.table("CSB_mobile_control_counts_matrix.tsv",
+                           header = TRUE,
+                           row.names = 1,
+                           sep = "\t")
+
+# Log2 transformation (count + 1 to avoid log(0))
+log2_control_csb <- log2(control_csb + 1)
+
+# Save output
+write.csv(log2_control_csb, "CSB_mobile_control_log2.csv")
+
+# Preview
+cat("=== Control Mobile Genes - Log2 Transformed ===\n")
+print(log2_control_csb)
+
+# -----------------------------------------------------------------------------
+# WHITEFLY MOBILE GENES
+# -----------------------------------------------------------------------------
+
+# Read count matrix
+whitefly_csb <- read.table("CSB_mobile_whitefly_counts_matrix.tsv",
+                            header = TRUE,
+                            row.names = 1,
+                            sep = "\t")
+
+# Log2 transformation (count + 1 to avoid log(0))
+log2_whitefly_csb <- log2(whitefly_csb + 1)
+
+# Save output
+write.csv(log2_whitefly_csb, "CSB_mobile_whitefly_log2.csv")
+
+# Preview
+cat("=== Whitefly Mobile Genes - Log2 Transformed ===\n")
+print(log2_whitefly_csb)
+
+# -----------------------------------------------------------------------------
+# OUTPUT FILES
+# CSB_mobile_control_log2.csv  - Log2 transformed control mobile gene counts
+# CSB_mobile_whitefly_log2.csv - Log2 transformed whitefly mobile gene counts
+# -----------------------------------------------------------------------------
+
+cat("\nDone! Output files saved in:", getwd(), "\n")
