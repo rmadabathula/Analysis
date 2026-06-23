@@ -1,0 +1,127 @@
+# =========================
+# GO enrichment continuous plot (Top 30 = 10 BP + 10 CC + 10 MF) - NO PANELS
+# Files used:
+#   1) LGWW_vs_SGWW_filtered.tsv
+#   2) WCG_GO_v2.5.gaf.txt
+# Output:
+#   GO_Top30_continuous.pdf / .png + GO_Top30_results.csv
+# =========================
+
+# 0) Set working directory (change if needed)
+setwd("C:/Users/Student/Downloads/Ramya/Whitefly/LGWW_VS_SGWW")
+
+# 1) Packages
+install.packages(c("readr","dplyr","ggplot2"))
+if (!requireNamespace("BiocManager", quietly=TRUE)) install.packages("BiocManager")
+BiocManager::install(c("clusterProfiler","GO.db"))
+
+library(readr)
+library(dplyr)
+library(ggplot2)
+library(clusterProfiler)
+library(GO.db)
+
+# 2) Read DEG file
+deg <- read_tsv("LGWF_vs_LGWW_filtered.tsv", show_col_types = FALSE)
+
+# rename by position (safe)
+colnames(deg)[1] <- "gene_id"  # was ...1
+colnames(deg)[3] <- "log2FC"   # was log2FoldChange
+
+# significant DEGs
+deg_genes <- deg %>%
+  filter(!is.na(padj), padj < 0.05, abs(log2FC) > 1) %>%
+  pull(gene_id) %>%
+  unique()
+
+cat("Significant DEGs:", length(deg_genes), "\n")
+
+# 3) Read GO annotation file (GAF)
+gaf <- read_tsv("WCG_GO_v2.5.gaf.txt",
+                comment = "!", col_names = FALSE, show_col_types = FALSE)
+
+# standard GAF columns:
+# X2 = gene_id, X5 = GO ID, X9 = Aspect (P/F/C)
+gene2go <- gaf %>%
+  transmute(
+    gene_id = X2,
+    GO      = X5,
+    Ont     = X9
+  ) %>%
+  filter(grepl("^GO:", GO), Ont %in% c("P","F","C")) %>%
+  distinct()
+
+# background genes
+bg_genes <- unique(gene2go$gene_id)
+
+matched <- sum(deg_genes %in% bg_genes)
+cat("DEGs matched in GO file:", matched, "out of", length(deg_genes), "\n")
+
+# 4) TERM2GENE maps for each ontology
+bp_map <- gene2go %>% filter(Ont=="P") %>% transmute(term=GO, gene=gene_id) %>% distinct()
+cc_map <- gene2go %>% filter(Ont=="C") %>% transmute(term=GO, gene=gene_id) %>% distinct()
+mf_map <- gene2go %>% filter(Ont=="F") %>% transmute(term=GO, gene=gene_id) %>% distinct()
+
+# 5) Enrichment (hypergeometric ORA)
+ego_bp <- enricher(gene = deg_genes, TERM2GENE = bp_map, universe = bg_genes,
+                   pAdjustMethod = "BH", pvalueCutoff = 1, qvalueCutoff = 1)
+ego_cc <- enricher(gene = deg_genes, TERM2GENE = cc_map, universe = bg_genes,
+                   pAdjustMethod = "BH", pvalueCutoff = 1, qvalueCutoff = 1)
+ego_mf <- enricher(gene = deg_genes, TERM2GENE = mf_map, universe = bg_genes,
+                   pAdjustMethod = "BH", pvalueCutoff = 1, qvalueCutoff = 1)
+
+bp_df <- as.data.frame(ego_bp); bp_df$Ont <- "BP"
+cc_df <- as.data.frame(ego_cc); cc_df$Ont <- "CC"
+mf_df <- as.data.frame(ego_mf); mf_df$Ont <- "MF"
+
+# 6) Convert GO IDs -> GO term names
+get_term_name <- function(ids){
+  nm <- Term(ids)
+  nm[is.na(nm)] <- ids[is.na(nm)]  # fallback if any name missing
+  nm
+}
+bp_df$Description <- get_term_name(bp_df$ID)
+cc_df$Description <- get_term_name(cc_df$ID)
+mf_df$Description <- get_term_name(mf_df$ID)
+
+# 7) Top 10 from each category (Top 30 total)
+bp_top <- bp_df %>% arrange(p.adjust) %>% slice_head(n=10)
+cc_top <- cc_df %>% arrange(p.adjust) %>% slice_head(n=10)
+mf_top <- mf_df %>% arrange(p.adjust) %>% slice_head(n=10)
+
+go_top30 <- bind_rows(bp_top, cc_top, mf_top) %>%
+  filter(!is.na(p.adjust))
+
+# GeneRatio numeric
+go_top30 <- go_top30 %>%
+  mutate(GeneRatioNum = sapply(strsplit(GeneRatio, "/"),
+                               function(x) as.numeric(x[1]) / as.numeric(x[2])))
+
+# =========================
+# 8) CONTINUOUS PLOT (NO BP/CC/MF PANELS)
+#    First 10 = BP, next 10 = CC, last 10 = MF (but not shown)
+# =========================
+go_top30$Ont <- factor(go_top30$Ont, levels = c("BP","CC","MF"))
+
+# order by Ont then significance
+go_top30 <- go_top30 %>%
+  arrange(Ont, p.adjust) %>%
+  mutate(TermLabel = Description)
+
+# lock y-axis order (top to bottom)
+go_top30$TermLabel <- factor(go_top30$TermLabel, levels = rev(go_top30$TermLabel))
+
+p_single <- ggplot(go_top30, aes(x = GeneRatioNum, y = TermLabel)) +
+  geom_point(aes(size = Count, color = p.adjust)) +
+  scale_color_viridis_c(option = "plasma") +
+  labs(title = "GO enrichment (Top 30)",
+       x = "GeneRatio", y = "Description", color = "padj", size = "Count") +
+  theme_bw()
+
+print(p_single)
+
+
+# Save plot + results
+ggsave("GO_Top30_continuous.pdf", p_single, width = 9, height = 11)
+ggsave("GO_Top30_continuous.png", p_single, width = 9, height = 11, dpi = 300)
+write.csv(go_top30, "GO_Top30_results.csv", row.names = FALSE)
