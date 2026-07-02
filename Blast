@@ -1,0 +1,119 @@
+#!/bin/bash
+# ============================================================
+# Rootstock-to-Arabidopsis Ortholog Mapping Pipeline
+# ============================================================
+# Purpose: BLAST any plant proteome against TAIR10 (Arabidopsis)
+#          to obtain Arabidopsis orthologs for every gene,
+#          enabling cross-species/cross-tissue comparisons
+#          (e.g., watermelon scion vs. rootstock mobile genes)
+#
+# Author: [Your name]
+# Date: [Date]
+# Usage: bash rootstock_to_arabidopsis.sh <query_protein_fasta> <output_prefix>
+# Example: bash rootstock_to_arabidopsis.sh Lsiceraria_v1.protein.fa lagenaria
+# ============================================================
+
+set -e  # Exit immediately if any command fails
+
+# ---- Input arguments ----
+QUERY_FASTA=$1          # e.g., Lsiceraria_v1.protein.fa
+OUTPUT_PREFIX=$2        # e.g., lagenaria
+
+if [ -z "$QUERY_FASTA" ] || [ -z "$OUTPUT_PREFIX" ]; then
+    echo "Usage: bash rootstock_to_arabidopsis.sh <query_protein_fasta> <output_prefix>"
+    exit 1
+fi
+
+# ---- Config ----
+TAIR10_DB="tair10_db"           # Pre-built BLAST database (see setup below)
+EVALUE="1e-5"
+THREADS=8
+
+echo "============================================"
+echo "Step 1: Verify input file"
+echo "============================================"
+if [ ! -f "$QUERY_FASTA" ]; then
+    echo "ERROR: Input file $QUERY_FASTA not found!"
+    exit 1
+fi
+
+SEQ_COUNT=$(grep -c ">" "$QUERY_FASTA")
+echo "Input file: $QUERY_FASTA"
+echo "Number of protein sequences: $SEQ_COUNT"
+head -2 "$QUERY_FASTA"
+echo ""
+
+echo "============================================"
+echo "Step 2: Check/build TAIR10 BLAST database"
+echo "============================================"
+if [ ! -f "${TAIR10_DB}.pin" ]; then
+    echo "TAIR10 database not found. Building it now..."
+    echo "NOTE: Requires TAIR10_pep.fasta (download manually from"
+    echo "arabidopsis.org -> Download -> Genes -> TAIR10_genome_release -> TAIR10_blastsets"
+    echo "-> Ath_AGI_LOCUS_TAIR10_Aug2012 (text format)"
+    
+    if [ ! -f "TAIR10_pep.fasta" ]; then
+        echo "ERROR: TAIR10_pep.fasta not found. Please download it first."
+        exit 1
+    fi
+    
+    makeblastdb -in TAIR10_pep.fasta -dbtype prot -out "$TAIR10_DB"
+else
+    echo "TAIR10 database already exists, skipping build step."
+fi
+echo ""
+
+echo "============================================"
+echo "Step 3: Run BLASTP against TAIR10"
+echo "============================================"
+echo "This may take several minutes depending on proteome size..."
+
+blastp -query "$QUERY_FASTA" \
+       -db "$TAIR10_DB" \
+       -outfmt "6 qseqid sseqid pident length evalue bitscore stitle" \
+       -evalue "$EVALUE" \
+       -max_target_seqs 1 \
+       -num_threads "$THREADS" \
+       -out "${OUTPUT_PREFIX}_TAIR10_hits.tsv"
+
+RAW_LINES=$(wc -l < "${OUTPUT_PREFIX}_TAIR10_hits.tsv")
+echo "BLAST complete. Raw output lines: $RAW_LINES"
+echo ""
+
+echo "============================================"
+echo "Step 4: Deduplicate to best hit per gene"
+echo "============================================"
+
+python3 << EOF
+import pandas as pd
+
+cols = ['query_gene', 'arabidopsis_hit', 'pct_identity', 'aln_length',
+        'evalue', 'bit_score', 'stitle']
+
+df = pd.read_csv('${OUTPUT_PREFIX}_TAIR10_hits.tsv', sep='\t', header=None, names=cols)
+
+print(f"Raw rows: {len(df)}")
+print(f"Unique genes with a hit: {df['query_gene'].nunique()}")
+
+# Keep only the best (lowest E-value) hit per gene, since a gene may have
+# multiple aligned segments (HSPs) against the same or different Arabidopsis genes
+df['evalue'] = pd.to_numeric(df['evalue'], errors='coerce')
+df_best = df.sort_values('evalue').drop_duplicates(subset='query_gene', keep='first')
+
+print(f"After deduplication: {len(df_best)} unique gene-to-ortholog mappings")
+
+# Calculate coverage
+input_gene_count = ${SEQ_COUNT}
+coverage_pct = 100 * len(df_best) / input_gene_count
+print(f"Coverage: {len(df_best)}/{input_gene_count} = {coverage_pct:.1f}%")
+
+df_best.to_csv('${OUTPUT_PREFIX}_TAIR10_best_hits.tsv', sep='\t', index=False)
+print(f"Saved: ${OUTPUT_PREFIX}_TAIR10_best_hits.tsv")
+EOF
+
+echo ""
+echo "============================================"
+echo "PIPELINE COMPLETE"
+echo "============================================"
+echo "Output file: ${OUTPUT_PREFIX}_TAIR10_best_hits.tsv"
+echo "Columns: query_gene | arabidopsis_hit | pct_identity | aln_length | evalue | bit_score | stitle"
