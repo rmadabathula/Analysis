@@ -1,0 +1,149 @@
+# Combined KEGG Metabolite Enrichment Plot Across All Comparisons
+# ------------------------------------------------------------------
+# This script reads the two Excel files per comparison (the "_KEGG.xlsx"
+# file with compound counts, and the "_KEGG_stat_AddLevel.xlsx" file with
+# p-values), joins them, calculates Rich Factor, and combines all
+# comparisons into one dot plot - same style as your transcriptomic
+# combined KEGG figure.
+
+library(readxl)
+library(dplyr)
+library(ggplot2)
+library(purrr)
+
+# ---- STEP 1: SET YOUR WORKING DIRECTORY ----
+# Change this to the exact folder path shown in your screenshot.
+# Example (Windows path style, adjust to your actual username/path):
+# setwd("C:/Users/YourName/Downloads/Ramya-Thesis/Metabolites_KEGG")
+
+setwd("PUT_YOUR_FOLDER_PATH_HERE")
+
+# ---- STEP 2: List each comparison's two files (names match your folder exactly) ----
+
+comparisons <- list(
+  list(
+    label = "UGWF/UG",
+    kegg_file = "UGWF_vs_UG_KEGG.xlsx",
+    stat_file = "UGWF_vs_UG_KEGG_stat_AddLevel.xlsx"
+  ),
+  list(
+    label = "SSWF/SS",
+    kegg_file = "SSWF_vs_SS_KEGG.xlsx",
+    stat_file = "SSWF_vs_SS_KEGG_stat_AddLevel.xlsx"
+  ),
+  list(
+    label = "CSBWF/CSB",
+    kegg_file = "CSBWF_vs_CSB_KEGG.xlsx",
+    stat_file = "CSBWF_vs_CSB_KEGG_stat_AddLevel.xlsx"
+  ),
+  list(
+    label = "LG3WF/LG3",
+    kegg_file = "LG30WF_vs_LG30_KEGG.xlsx",
+    stat_file = "LG30WF_vs_LG30_KEGG_stat_AddLevel.xlsx"
+  ),
+  list(
+    label = "MM30WF/MM30",
+    kegg_file = "MM30WF_vs_MM30_KEGG.xlsx",
+    stat_file = "MM30WF_vs_MM30_KEGG_stat_AddLevel.xlsx"
+  )
+)
+
+# ---- STEP 2: Function to read + join + calculate Rich Factor for one comparison ----
+
+process_comparison <- function(comp) {
+  kegg <- read_excel(comp$kegg_file)
+  stat <- read_excel(comp$stat_file)
+
+  # --- DEBUG: check column types before doing anything else ---
+  cat("\n---", comp$label, "---\n")
+  cat("Sig_compound class:", class(kegg$Sig_compound), "\n")
+  cat("compound class:", class(kegg$compound), "\n")
+  cat("Sample Sig_compound values:", paste(head(kegg$Sig_compound, 5), collapse=", "), "\n")
+  cat("Sample compound values:", paste(head(kegg$compound, 5), collapse=", "), "\n")
+
+  # Force both columns to numeric (this also converts things like " 22 "
+  # with stray spaces, or numbers stored as text, into proper numbers).
+  # Any value that truly isn't a number becomes NA, which we can then spot.
+  kegg <- kegg %>%
+    mutate(
+      Sig_compound = as.numeric(as.character(Sig_compound)),
+      compound = as.numeric(as.character(compound))
+    )
+
+  # Check if the conversion created any NAs (i.e. genuinely non-numeric entries)
+  n_na <- sum(is.na(kegg$Sig_compound)) + sum(is.na(kegg$compound))
+  if (n_na > 0) {
+    cat("WARNING:", n_na, "value(s) could not be converted to numeric in", comp$label, "\n")
+  }
+
+  # Join the two files on ko_ID (safer than pathway name, which can have
+  # slight formatting differences between files)
+  merged <- kegg %>%
+    select(ko_ID, Kegg_pathway, Sig_compound, compound) %>%
+    inner_join(
+      stat %>% select(ko_ID, `P-value`, `Adjusted P-value`),
+      by = "ko_ID"
+    ) %>%
+    mutate(
+      RichFactor = Sig_compound / compound,
+      Comparison = comp$label
+    ) %>%
+    rename(Count = Sig_compound, Pvalue = `P-value`, Padj = `Adjusted P-value`)
+
+  return(merged)
+}
+
+# ---- STEP 3: Process all comparisons and combine into one table ----
+
+all_data <- map_dfr(comparisons, process_comparison)
+
+# ---- STEP 4: (Optional but recommended) Keep only top N pathways overall ----
+# Same as your transcriptomic combined plot, which showed "Top 25" -
+# otherwise the plot gets too crowded with every pathway from every comparison.
+# We also exclude overly generic catch-all categories (like "Metabolic pathways"
+# and "Biosynthesis of cofactors") since these are so broad they show up as
+# significant almost by default and don't add much specific biological insight.
+
+generic_categories <- c("Metabolic pathways", "Biosynthesis of cofactors")
+
+all_data <- all_data %>%
+  filter(!Kegg_pathway %in% generic_categories)
+
+top_pathways <- all_data %>%
+  group_by(Kegg_pathway) %>%
+  summarise(min_p = min(Pvalue, na.rm = TRUE)) %>%
+  arrange(min_p) %>%
+  slice_head(n = 25) %>%
+  pull(Kegg_pathway)
+
+plot_data <- all_data %>%
+  filter(Kegg_pathway %in% top_pathways)
+
+# Set the comparison order for the x-axis: UG, SG, CSB, LG30, MM30
+plot_data$Comparison <- factor(
+  plot_data$Comparison,
+  levels = c("UGWF/UG", "SSWF/SS", "CSBWF/CSB", "LG3WF/LG3", "MM30WF/MM30")
+)
+
+# ---- STEP 5: Build the combined plot ----
+
+p <- ggplot(plot_data, aes(x = Comparison, y = Kegg_pathway)) +
+  geom_point(aes(size = Count, color = Pvalue)) +
+  scale_color_gradientn(colors = c("red", "orange", "yellow", "green", "blue"),
+                        limits = c(0, 1), name = "P-value") +
+  scale_size_continuous(name = "Count") +
+  theme_bw() +
+  labs(
+    title = "Combined KEGG metabolite enrichment across comparisons",
+    x = "Comparison",
+    y = NULL
+  ) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    panel.grid.minor = element_blank()
+  )
+
+print(p)
+
+# ---- STEP 6: Save the plot ----
+ggsave("combined_KEGG_metabolite_enrichment.png", p, width = 9, height = 8, dpi = 300)
