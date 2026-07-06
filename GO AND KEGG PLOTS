@@ -1,0 +1,172 @@
+# ============================================================
+# GO (BP/MF/CC) and KEGG Dotplot Generation from g:Profiler exports
+# ============================================================
+# Purpose: Build individual per-comparison GO dotplots (Option A),
+#          one combined cross-comparison GO dotplot (Option B),
+#          and one combined KEGG pathway dotplot.
+#
+# Input:  g:Profiler CSV exports, one per comparison, with columns:
+#         source, term_name, term_id, adjusted_p_value,
+#         intersection_size, query_size, effective_domain_size, ...
+#
+# IMPORTANT: For each GO comparison's individual plot, this script
+# takes the TOP 10 terms from EACH ontology (BP, MF, CC) separately
+# -- NOT top 20 overall -- so that ontologies with fewer significant
+# terms (e.g., CC often has very few) are not squeezed out by BP,
+# which typically has many more significant terms due to greater
+# statistical power from larger gene-set sizes.
+#
+# Color convention: color = raw adjusted_p_value (not -log10),
+# low value (more significant) = red, high value = blue.
+# Change scale_color_gradient() below if you prefer -log10(padj).
+# ============================================================
+
+library(ggplot2)
+library(dplyr)
+
+# ---- USER CONFIGURATION ----
+setwd("C:/Users/YourUsername/path/to/your/working/directory")  # <-- EDIT THIS
+
+# Clean up old plot files first so nothing stale lingers
+old_files <- list.files(pattern = "^GO_dotplot_.*\\.png$|^KEGG_combined_plot\\.png$")
+if (length(old_files) > 0) {
+  cat("Deleting", length(old_files), "old plot files...\n")
+  file.remove(old_files)
+}
+
+# Map comparison display names -> g:Profiler CSV export filenames
+files <- list(
+  "UGWF/UG"     = "UG_gprofiler.csv",
+  "SGWF/SG"     = "sg_gprofiler.csv",
+  "LG3WF/LG3"   = "lg3_gprofiler.csv",
+  "CSBWF/CSB"   = "csb_gprofiler.csv",
+  "MM30WF/MM30" = "mm30_gprofiler.csv"
+)
+
+# ============================================================
+# PART 1: 5 INDIVIDUAL GO DOTPLOTS
+# (Top 10 BP + Top 10 MF + Top 10 CC per comparison; takes all
+#  available terms if fewer than 10 exist in that ontology)
+# ============================================================
+
+for (comp_name in names(files)) {
+  
+  df <- read.csv(files[[comp_name]], stringsAsFactors = FALSE)
+  df$GeneRatio <- df$intersection_size / df$query_size
+  
+  bp_df <- df[df$source == "GO:BP", ] %>% arrange(adjusted_p_value) %>% head(10)
+  mf_df <- df[df$source == "GO:MF", ] %>% arrange(adjusted_p_value) %>% head(10)
+  cc_df <- df[df$source == "GO:CC", ] %>% arrange(adjusted_p_value) %>% head(10)
+  
+  go_df <- rbind(bp_df, mf_df, cc_df)
+  
+  if (nrow(go_df) == 0) {
+    cat(comp_name, ": no GO terms found, skipping\n")
+    next
+  }
+  
+  cat(comp_name, "- BP:", nrow(bp_df), "| MF:", nrow(mf_df), "| CC:", nrow(cc_df),
+      "| Total:", nrow(go_df), "\n")
+  
+  go_df <- go_df %>% arrange(source, adjusted_p_value)
+  go_df$term_name <- factor(go_df$term_name, levels = rev(go_df$term_name))
+  
+  p <- ggplot(go_df, aes(x = GeneRatio, y = term_name)) +
+    geom_point(aes(size = intersection_size, color = adjusted_p_value)) +
+    scale_color_gradient(low = "red", high = "blue", name = "padj") +
+    scale_size_continuous(name = "Count") +
+    labs(title = paste0("GO enrichment: ", comp_name), x = "GeneRatio", y = "") +
+    theme_bw() +
+    theme(axis.text.y = element_text(size = 9))
+  
+  safe_name <- gsub("/", "_", comp_name)
+  ggsave(paste0("GO_dotplot_", safe_name, ".png"), plot = p, width = 8, height = 7, dpi = 300)
+}
+
+cat("\nPart 1 complete: 5 individual GO dotplots saved.\n\n")
+
+
+# ============================================================
+# PART 2: COMBINED GO DOTPLOT (Option B)
+# All comparisons shown as columns; rows = top 25 terms overall,
+# ranked by best (lowest) adjusted p-value across any comparison
+# ============================================================
+
+all_go <- data.frame()
+for (comp_name in names(files)) {
+  df <- read.csv(files[[comp_name]], stringsAsFactors = FALSE)
+  df$GeneRatio <- df$intersection_size / df$query_size
+  df$Comparison <- comp_name
+  go_df <- df[df$source %in% c("GO:BP", "GO:MF", "GO:CC"), ]
+  all_go <- rbind(all_go, go_df)
+}
+
+term_rank <- all_go %>%
+  group_by(term_name) %>%
+  summarise(best_padj = min(adjusted_p_value)) %>%
+  arrange(best_padj) %>%
+  head(25)
+
+plot_data <- all_go[all_go$term_name %in% term_rank$term_name, ]
+plot_data$term_name <- factor(plot_data$term_name, levels = rev(term_rank$term_name))
+plot_data$Comparison <- factor(plot_data$Comparison, levels = names(files))
+
+p_combined <- ggplot(plot_data, aes(x = Comparison, y = term_name)) +
+  geom_point(aes(size = intersection_size, color = adjusted_p_value)) +
+  scale_color_gradient(low = "red", high = "blue", name = "padj") +
+  scale_size_continuous(name = "Count") +
+  labs(title = "Combined GO enrichment across comparisons (Top 25 terms)", x = "", y = "") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 10),
+        axis.text.y = element_text(size = 9))
+
+ggsave("GO_dotplot_COMBINED.png", plot = p_combined, width = 9, height = 10, dpi = 300)
+cat("Part 2 complete: Combined GO dotplot saved.\n\n")
+
+
+# ============================================================
+# PART 3: KEGG COMBINED PLOT
+# Automatically omits any comparison with zero significant
+# KEGG pathways -- no manual filtering needed.
+# ============================================================
+
+all_kegg <- data.frame()
+for (comp_name in names(files)) {
+  df <- read.csv(files[[comp_name]], stringsAsFactors = FALSE)
+  df$GeneRatio <- df$intersection_size / df$query_size
+  df$Comparison <- comp_name
+  kegg_df <- df[df$source == "KEGG", ]
+  all_kegg <- rbind(all_kegg, kegg_df)
+}
+
+cat("KEGG hits per comparison:\n")
+print(table(all_kegg$Comparison))
+
+if (nrow(all_kegg) > 0) {
+  
+  term_rank_kegg <- all_kegg %>%
+    group_by(term_name) %>%
+    summarise(best_padj = min(adjusted_p_value)) %>%
+    arrange(best_padj)
+  
+  all_kegg$term_name <- factor(all_kegg$term_name, levels = rev(term_rank_kegg$term_name))
+  
+  present_comparisons <- names(files)[names(files) %in% unique(all_kegg$Comparison)]
+  all_kegg$Comparison <- factor(all_kegg$Comparison, levels = present_comparisons)
+  
+  p_kegg <- ggplot(all_kegg, aes(x = Comparison, y = term_name)) +
+    geom_point(aes(size = intersection_size, color = adjusted_p_value)) +
+    scale_color_gradient(low = "red", high = "blue", name = "padj") +
+    scale_size_continuous(name = "Count") +
+    labs(title = "KEGG pathway enrichment across comparisons", x = "", y = "") +
+    theme_bw() +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 10),
+          axis.text.y = element_text(size = 10))
+  
+  ggsave("KEGG_combined_plot.png", plot = p_kegg, width = 7, height = 5, dpi = 300)
+  cat("\nPart 3 complete: KEGG combined plot saved.\n")
+} else {
+  cat("\nNo KEGG hits found in any comparison - skipping KEGG plot.\n")
+}
+
+cat("\n=== ALL GO/KEGG PLOTS COMPLETE ===\n")
