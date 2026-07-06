@@ -1,0 +1,340 @@
+Master Heatmap Script — All 7 Categories in One Loop
+rlibrary(pheatmap)
+
+# ---- USER CONFIGURATION ----
+setwd("C:/Users/Chinnannan/Downloads/Ramya-Thesis/Final_DEGS")  # <-- EDIT THIS
+
+# Comparison columns in the exact order you want displayed
+comparison_cols <- c("UGWF/UG", "SGWF/SG", "CSBWF/CSB", "LG3WF/LG3", "MM30WF/MM30")
+
+# Each category's input file + plot-height scaling factor (adjust if a
+# plot looks too cramped or too stretched for its gene count)
+categories <- list(
+  Phytohormone = list(file = "phytohormone_FULL_values_FINAL.csv", height_per_gene = 0.10),
+  Calcium      = list(file = "calcium_FULL_values_FINAL.csv",      height_per_gene = 0.20),
+  TF           = list(file = "TF_FULL_values_FINAL.csv",           height_per_gene = 0.06),
+  Kinase       = list(file = "Kinase_FULL_values_FINAL.csv",       height_per_gene = 0.08),
+  Redox        = list(file = "Redox_FULL_values_FINAL.csv",        height_per_gene = 0.20),
+  Metabolite   = list(file = "Metabolite_FULL_values_FINAL.csv",   height_per_gene = 0.20),
+  CellWall     = list(file = "CellWall_FULL_values_FINAL.csv",     height_per_gene = 0.10)
+)
+
+color_palette <- colorRampPalette(c("green", "black", "red"))(100)
+timestamp <- format(Sys.time(), "%Y%m%d_%H%M%S")
+
+# ============================================================
+# MAIN LOOP - processes every category automatically
+# ============================================================
+
+for (cat_name in names(categories)) {
+  
+  cfg <- categories[[cat_name]]
+  
+  if (!file.exists(cfg$file)) {
+    cat("SKIPPING", cat_name, "- file not found:", cfg$file, "\n")
+    next
+  }
+  
+  cat("\n=== Processing category:", cat_name, "===\n")
+  
+  df <- read.csv(cfg$file, stringsAsFactors = FALSE)
+  
+  # Row labels: GeneID:Symbol (or GeneID:AT_ID if no symbol available)
+  df$Label <- ifelse(
+    !is.na(df$SYM) & trimws(df$SYM) != "",
+    paste0(df$GeneID, ":", trimws(sub(",.*", "", df$SYM))),
+    paste0(df$GeneID, ":", df$ARA_ID)
+  )
+  rownames(df) <- df$Label
+  
+  # Restore "/" in comparison column names (R converts "/" to "." on CSV read)
+  colnames(df) <- gsub("\\.", "/", colnames(df))
+  
+  mat_full <- as.matrix(df[, comparison_cols])
+  
+  # Strict subset: |log2FC| >= 2 in at least one comparison
+  strict_rows <- apply(mat_full, 1, function(x) any(abs(x) >= 2, na.rm = TRUE))
+  mat_strict <- mat_full[strict_rows, , drop = FALSE]
+  
+  cat(cat_name, "- Full (|log2FC|>=1):", nrow(mat_full),
+      "| Strict (|log2FC|>=2):", nrow(mat_strict), "\n")
+  
+  h_full   <- max(4, nrow(mat_full)   * cfg$height_per_gene)
+  h_strict <- max(4, nrow(mat_strict) * cfg$height_per_gene * 1.5)
+  
+  # ---- Plot 1: Full set, clustered ----
+  pheatmap(mat_full, color = color_palette, breaks = seq(-3.5, 3.5, length.out = 101),
+    cluster_rows = TRUE, cluster_cols = TRUE, clustering_method = "complete",
+    fontsize_row = 6, fontsize_col = 10, border_color = NA,
+    main = paste0(cat_name, " |log2FC|>=1 (Clustered, n=", nrow(mat_full), ")"),
+    filename = paste0(cat_name, "_FC1_CLUSTERED_", timestamp, ".png"),
+    width = 8, height = h_full)
+  
+  # ---- Plot 2: Full set, fixed order ----
+  pheatmap(mat_full, color = color_palette, breaks = seq(-3.5, 3.5, length.out = 101),
+    cluster_rows = FALSE, cluster_cols = FALSE,
+    fontsize_row = 6, fontsize_col = 10, border_color = NA,
+    main = paste0(cat_name, " |log2FC|>=1 (Fixed Order, n=", nrow(mat_full), ")"),
+    filename = paste0(cat_name, "_FC1_FIXED_ORDER_", timestamp, ".png"),
+    width = 8, height = h_full)
+  
+  # ---- Plot 3 & 4: Strict subset (only if enough genes remain) ----
+  if (nrow(mat_strict) >= 2) {
+    pheatmap(mat_strict, color = color_palette, breaks = seq(-3.5, 3.5, length.out = 101),
+      cluster_rows = TRUE, cluster_cols = TRUE, clustering_method = "complete",
+      fontsize_row = 7, fontsize_col = 10, border_color = NA,
+      main = paste0(cat_name, " |log2FC|>=2 (Clustered, n=", nrow(mat_strict), ")"),
+      filename = paste0(cat_name, "_FC2_CLUSTERED_", timestamp, ".png"),
+      width = 8, height = h_strict)
+    
+    pheatmap(mat_strict, color = color_palette, breaks = seq(-3.5, 3.5, length.out = 101),
+      cluster_rows = FALSE, cluster_cols = FALSE,
+      fontsize_row = 7, fontsize_col = 10, border_color = NA,
+      main = paste0(cat_name, " |log2FC|>=2 (Fixed Order, n=", nrow(mat_strict), ")"),
+      filename = paste0(cat_name, "_FC2_FIXED_ORDER_", timestamp, ".png"),
+      width = 8, height = h_strict)
+  } else {
+    cat("  Skipping FC>=2 plots for", cat_name, "- too few genes (", nrow(mat_strict), ")\n")
+  }
+}
+
+cat("\n=== ALL CATEGORY HEATMAPS COMPLETE ===\n")
+cat("Check your working directory for PNG files timestamped:", timestamp, "\n")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Good idea — here's the complete, standalone Phytohormone pipeline, from raw DEG files all the way to final heatmaps, exactly as we actually did it.
+Step 1 — Python: Classify phytohormone genes across all 5 comparisons
+pythonimport pandas as pd
+import re
+
+# Strict, specific phytohormone keywords
+substring_keywords = [
+    'abscisic acid', 'auxin transporter', 'auxin efflux', 'auxin influx',
+    'auxin response factor', 'auxin-responsive', 'auxin-induced',
+    'ethylene-responsive', 'ethylene receptor', 'ethylene insensitive',
+    'ethylene-insensitive', '1-aminocyclopropane-1-carboxylate',
+    'jasmonate', 'jasmonic acid', 'allene oxide', 'lipoxygenase',
+    'oxophytodienoate', 'jasmonoyl',
+    'salicylic acid', 'salicylate',
+    'gibberellin', 'della protein',
+    'cytokinin', 'isopentenyltransferase',
+    'brassinosteroid', 'strigolactone',
+    'epoxycarotenoid dioxygenase', 'clavata3/esr', 'cle precursor',
+    'aba receptor', 'aba-responsive',
+]
+
+word_boundary_keywords = [
+    'pin1','pin2','pin3','pin4','pin5','pin6','pin7','pin8',
+    'pyl','pyr1','jaz','ckx','nced','della','erf','cyp72','cyp90','cyp85',
+    'ait','gh3','saur','arf','bri1','ein3','ein2','etr1','etr2','ers1','ers2',
+    'coi1','myc2','myc3','myc4','abi1','abi2','abi3','abi4','abi5',
+    'ga20ox','ga3ox','ga2ox','acs','aco','ipt',
+]
+
+def check_field(text, results_set):
+    if pd.isna(text): return
+    d = str(text).lower()
+    for k in substring_keywords:
+        if k in d: results_set.add(k)
+    for k in word_boundary_keywords:
+        if re.search(r'\b'+re.escape(k)+r'\b', d): results_set.add(k)
+
+def classify_row(row, wm_col):
+    hits = set()
+    check_field(row.get(wm_col), hits)
+    check_field(row.get('Arabidopsis_description'), hits)
+    check_field(row.get('symbols'), hits)
+    if hits: return 'YES', '; '.join(sorted(hits))
+    return 'NO', ''
+
+files = {
+    'UGWF_vs_UG_filtered.tsv': 'UGWF_vs_UG_phytohormone_review.tsv',
+    'SGWF_vs_SG_filtered.tsv': 'SGWF_vs_SG_phytohormone_review.tsv',
+    'LG3WF_vs_LG3_filtered.tsv': 'LG3WF_vs_LG3_phytohormone_review.tsv',
+    'CSBWF_vs_CSB_filtered.tsv': 'CSBWF_vs_CSB_phytohormone_review.tsv',
+    'MM30WF_vs_MM30_filtered.tsv': 'MM30WF_vs_MM30_phytohormone_review.tsv',
+}
+
+for infile, outfile in files.items():
+    df = pd.read_csv(infile, sep='\t')
+    df = df.rename(columns={'Unnamed: 0':'GeneID', 'Unnamed: 1':'Arabidopsis_ID'})
+    wm_col = [c for c in df.columns if 'watermelon' in c.lower()][0]
+    
+    results = df.apply(lambda r: classify_row(r, wm_col), axis=1)
+    df['Phytohormone_YN'] = [r[0] for r in results]
+    df['Matched_Keyword'] = [r[1] for r in results]
+    
+    yes_count = (df['Phytohormone_YN']=='YES').sum()
+    print(f"{infile}: {yes_count} YES out of {len(df)} total")
+    
+    df.to_csv(outfile, sep='\t', index=False)
+
+print("\nStep 1 complete - all 5 review files saved.")
+
+
+
+Step 2 — Python: Merge into one master file (union across all 5 comparisons)
+pythonimport pandas as pd
+
+files = {
+    'UGWF/UG': 'UGWF_vs_UG_phytohormone_review.tsv',
+    'SGWF/SG': 'SGWF_vs_SG_phytohormone_review.tsv',
+    'CSBWF/CSB': 'CSBWF_vs_CSB_phytohormone_review.tsv',
+    'LG3WF/LG3': 'LG3WF_vs_LG3_phytohormone_review.tsv',
+    'MM30WF/MM30': 'MM30WF_vs_MM30_phytohormone_review.tsv',
+}
+
+gene_info = {}
+data_by_comp = {}
+
+for name, path in files.items():
+    df = pd.read_csv(path, sep='\t')
+    df = df.rename(columns={'Unnamed: 0':'GeneID', 'Unnamed: 1':'Arabidopsis_ID'})
+    yes = df[df['Phytohormone_YN']=='YES'].copy()
+    data_by_comp[name] = yes.set_index('GeneID')['log2FoldChange']
+    for _, row in yes.iterrows():
+        gid = row['GeneID']
+        sym = str(row.get('symbols','')).strip()
+        at_id = row.get('Arabidopsis_ID','')
+        if gid not in gene_info:
+            gene_info[gid] = (at_id, sym)
+
+all_genes = sorted(gene_info.keys())
+print(f"Total unique phytohormone genes (union): {len(all_genes)}")
+
+comparisons = list(files.keys())
+rows = []
+for gid in all_genes:
+    at_id, sym = gene_info[gid]
+    row = {'GeneID': gid, 'ARA_ID': at_id, 'SYM': sym}
+    for name in comparisons:
+        row[name] = data_by_comp[name].get(gid, None)
+    rows.append(row)
+
+master = pd.DataFrame(rows)
+master.to_csv('phytohormone_MASTER_FILE.csv', index=False)
+print("Saved: phytohormone_MASTER_FILE.csv")
+
+non_null = master[comparisons].notna().sum(axis=1)
+print("\nCoverage distribution:")
+print(non_null.value_counts().sort_index())
+
+
+Step 3 — Python: Fill non-significant cells with real fold-change values
+pythonimport pandas as pd
+
+full_files = {
+    'UGWF/UG': ('UGWFvsUG.tsv', '\t'),
+    'SGWF/SG': ('SGWF_vs_SG.csv', ','),
+    'CSBWF/CSB': ('CSBWFvsCSB.tsv', '\t'),
+    'LG3WF/LG3': ('LG3WFvsLG3.csv', ','),
+    'MM30WF/MM30': ('MM30WFvsMM30.tsv', '\t'),
+}
+
+master = pd.read_csv('phytohormone_MASTER_FILE.csv')
+comparisons = ['UGWF/UG','SGWF/SG','CSBWF/CSB','LG3WF/LG3','MM30WF/MM30']
+
+full_data = {}
+for name, (path, sep) in full_files.items():
+    df = pd.read_csv(path, sep=sep)
+    df.columns = ['GeneID'] + list(df.columns[1:])
+    df['log2FoldChange'] = pd.to_numeric(df['log2FoldChange'], errors='coerce')
+    full_data[name] = df.set_index('GeneID')['log2FoldChange']
+
+final = master.copy()
+for comp in comparisons:
+    final[comp] = pd.to_numeric(final[comp], errors='coerce')
+    lookup = full_data[comp]
+    filled = final['GeneID'].map(lookup)
+    final[comp] = final[comp].combine_first(filled)
+
+missing_check = final[comparisons].isna().sum()
+print("Remaining missing values per comparison:")
+print(missing_check)
+
+if missing_check.sum() > 0:
+    final[comparisons] = final[comparisons].fillna(0)
+    print("Filled remaining with 0 (genuine zero-expression).")
+
+dup = final['GeneID'].duplicated().sum()
+print(f"\nTotal genes: {len(final)}, Duplicates: {dup}")
+
+final.to_csv('phytohormone_FULL_values_FINAL.csv', index=False)
+print("Saved: phytohormone_FULL_values_FINAL.csv")
+
+
+Step 4 — R: Generate the 4 heatmaps (|log2FC|≥1 and ≥2, clustered + fixed order)
+rlibrary(pheatmap)
+
+setwd("C:/Users/Chinnannan/Downloads/Ramya-Thesis/Final_DEGS")
+
+df <- read.csv("phytohormone_FULL_values_FINAL.csv", stringsAsFactors = FALSE)
+
+df$Label <- ifelse(
+  !is.na(df$SYM) & trimws(df$SYM) != "",
+  paste0(df$GeneID, ":", trimws(sub(",.*", "", df$SYM))),
+  paste0(df$GeneID, ":", df$ARA_ID)
+)
+rownames(df) <- df$Label
+
+colnames(df) <- gsub("\\.", "/", colnames(df))
+comparison_cols <- c("UGWF/UG", "SGWF/SG", "CSBWF/CSB", "LG3WF/LG3", "MM30WF/MM30")
+mat_full <- as.matrix(df[, comparison_cols])
+
+strict_rows <- apply(mat_full, 1, function(x) any(abs(x) >= 2, na.rm = TRUE))
+mat_strict <- mat_full[strict_rows, ]
+
+cat("|log2FC|>=1:", nrow(mat_full), "| |log2FC|>=2:", nrow(mat_strict), "\n")
+
+color_palette <- colorRampPalette(c("green", "black", "red"))(100)
+timestamp <- format(Sys.time(), "%Y%m%d_%H%M%S")
+
+pheatmap(mat_full, color = color_palette, breaks = seq(-3.5, 3.5, length.out = 101),
+  cluster_rows = TRUE, cluster_cols = TRUE, clustering_method = "complete",
+  fontsize_row = 6, fontsize_col = 10, border_color = NA,
+  main = paste0("Phytohormone DEGs |log2FC|>=1 (Clustered, n=", nrow(mat_full), ")"),
+  filename = paste0("Phytohormone_FC1_CLUSTERED_", timestamp, ".png"), width = 8, height = 22)
+
+pheatmap(mat_full, color = color_palette, breaks = seq(-3.5, 3.5, length.out = 101),
+  cluster_rows = FALSE, cluster_cols = FALSE,
+  fontsize_row = 6, fontsize_col = 10, border_color = NA,
+  main = paste0("Phytohormone DEGs |log2FC|>=1 (Fixed Order, n=", nrow(mat_full), ")"),
+  filename = paste0("Phytohormone_FC1_FIXED_ORDER_", timestamp, ".png"), width = 8, height = 22)
+
+pheatmap(mat_strict, color = color_palette, breaks = seq(-3.5, 3.5, length.out = 101),
+  cluster_rows = TRUE, cluster_cols = TRUE, clustering_method = "complete",
+  fontsize_row = 7, fontsize_col = 10, border_color = NA,
+  main = paste0("Phytohormone DEGs |log2FC|>=2 (Clustered, n=", nrow(mat_strict), ")"),
+  filename = paste0("Phytohormone_FC2_CLUSTERED_", timestamp, ".png"), width = 8, height = 14)
+
+pheatmap(mat_strict, color = color_palette, breaks = seq(-3.5, 3.5, length.out = 101),
+  cluster_rows = FALSE, cluster_cols = FALSE,
+  fontsize_row = 7, fontsize_col = 10, border_color = NA,
+  main = paste0("Phytohormone DEGs |log2FC|>=2 (Fixed Order, n=", nrow(mat_strict), ")"),
+  filename = paste0("Phytohormone_FC2_FIXED_ORDER_", timestamp, ".png"), width = 8, height = 14)
+
+cat("All 4 Phytohormone heatmaps saved.\n")
