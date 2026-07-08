@@ -1,0 +1,151 @@
+# ============================================================
+# LG3 Mobile mRNA Pipeline — Condition-Matched FP + FPKM Filter
+# ============================================================
+
+cd ~/Lagenaria_mobile_Main
+mkdir -p results_v2_condition_matched
+
+# ------------------------------------------------------------
+# STEP 1: Build condition-matched false-positive gene lists
+# ------------------------------------------------------------
+cat results/UG_control.genes results/SG_control.genes | sort -u > results_v2_condition_matched/FP_control.genes
+cat results/UGWF.genes results/SGWF.genes | sort -u > results_v2_condition_matched/FP_WF.genes
+
+echo "FP_control genes:"
+wc -l results_v2_condition_matched/FP_control.genes
+echo "FP_WF genes:"
+wc -l results_v2_condition_matched/FP_WF.genes
+
+# ------------------------------------------------------------
+# STEP 2: Replicate-consistency filter (>=2 of 3 replicates)
+# ------------------------------------------------------------
+echo "=== LG3 CONTROL: replicate-consistency filter (S10,S11,S12) ==="
+cat genes/S10.genes genes/S11.genes genes/S12.genes | sort | uniq -c | awk '$1 >= 2 {print $2}' > results_v2_condition_matched/LG3_control_rep2of3.genes
+wc -l results_v2_condition_matched/LG3_control_rep2of3.genes
+
+echo "=== LG3 WF: replicate-consistency filter (S25,S26,S27) ==="
+cat genes/S25.genes genes/S26.genes genes/S27.genes | sort | uniq -c | awk '$1 >= 2 {print $2}' > results_v2_condition_matched/LG3_WF_rep2of3.genes
+wc -l results_v2_condition_matched/LG3_WF_rep2of3.genes
+
+# ------------------------------------------------------------
+# STEP 3: Apply condition-matched FP filter on top of rep-consistent candidates
+# ------------------------------------------------------------
+comm -23 <(sort results_v2_condition_matched/LG3_control_rep2of3.genes) <(sort results_v2_condition_matched/FP_control.genes) > results_v2_condition_matched/LG3_mobile_control_FINAL_v2.genes
+comm -23 <(sort results_v2_condition_matched/LG3_WF_rep2of3.genes) <(sort results_v2_condition_matched/FP_WF.genes) > results_v2_condition_matched/LG3_mobile_WF_FINAL_v2.genes
+
+echo "FINAL LG3 Control mobile mRNAs (rep-consistent + condition-matched FP):"
+wc -l results_v2_condition_matched/LG3_mobile_control_FINAL_v2.genes
+echo "FINAL LG3 WF mobile mRNAs (rep-consistent + condition-matched FP):"
+wc -l results_v2_condition_matched/LG3_mobile_WF_FINAL_v2.genes
+
+# ------------------------------------------------------------
+# STEP 4: FPKM calculation and filtering (Python script)
+# ------------------------------------------------------------
+cat << 'EOF' > results_v2_condition_matched/compute_fpkm_filter.py
+import sys
+
+# 1. Parse gene lengths from GFF3
+gene_lengths = {}
+with open('genes/LG.genes_only.gff3') as f:
+    for line in f:
+        if line.startswith('#') or not line.strip():
+            continue
+        parts = line.strip().split('\t')
+        if len(parts) < 9 or parts[2] != 'gene':
+            continue
+        start, end = int(parts[3]), int(parts[4])
+        length = end - start + 1
+        attrs = parts[8]
+        gene_id = None
+        for field in attrs.split(';'):
+            if field.startswith('ID='):
+                gene_id = field.replace('ID=', '').strip()
+                break
+        if gene_id:
+            gene_lengths[gene_id] = length
+
+print(f"Loaded lengths for {len(gene_lengths)} genes")
+
+# 2. Function to compute FPKM for one sample's read count file
+def compute_fpkm(counts_file, gene_lengths):
+    counts = {}
+    with open(counts_file) as f:
+        for line in f:
+            parts = line.strip().split('\t')
+            if len(parts) != 2:
+                continue
+            gene_id, count = parts[0], int(parts[1])
+            counts[gene_id] = count
+
+    total_mapped = sum(counts.values())
+    total_mapped_millions = total_mapped / 1_000_000
+
+    fpkm = {}
+    for gene_id, count in counts.items():
+        if gene_id not in gene_lengths:
+            continue
+        length_kb = gene_lengths[gene_id] / 1000
+        if length_kb == 0 or total_mapped_millions == 0:
+            fpkm[gene_id] = 0
+        else:
+            fpkm[gene_id] = count / (length_kb * total_mapped_millions)
+    return fpkm, total_mapped
+
+# 3. Compute FPKM for each replicate, per condition
+conditions = {
+    'LG3_control': ['counts/S10.gene_readcounts.tsv', 'counts/S11.gene_readcounts.tsv', 'counts/S12.gene_readcounts.tsv'],
+    'LG3_WF': ['counts/S25.gene_readcounts.tsv', 'counts/S26.gene_readcounts.tsv', 'counts/S27.gene_readcounts.tsv'],
+}
+
+FPKM_THRESHOLD = 0.05
+
+for cond_name, files in conditions.items():
+    print(f"\n=== {cond_name} ===")
+    fpkm_per_rep = []
+    for f in files:
+        fpkm, total = compute_fpkm(f, gene_lengths)
+        print(f"  {f}: total mapped reads = {total}")
+        fpkm_per_rep.append(fpkm)
+
+    # Genes passing FPKM > threshold in >=2 of 3 replicates
+    all_genes = set()
+    for fpkm in fpkm_per_rep:
+        all_genes.update(fpkm.keys())
+
+    passing_genes = []
+    for gene in all_genes:
+        pass_count = sum(1 for fpkm in fpkm_per_rep if fpkm.get(gene, 0) > FPKM_THRESHOLD)
+        if pass_count >= 2:
+            passing_genes.append(gene)
+
+    out_file = f"results_v2_condition_matched/{cond_name}_FPKM_passing.genes"
+    with open(out_file, 'w') as out:
+        for gene in sorted(passing_genes):
+            out.write(gene + '\n')
+
+    print(f"  Genes with FPKM > {FPKM_THRESHOLD} in >=2/3 reps: {len(passing_genes)}")
+    print(f"  Saved to: {out_file}")
+
+EOF
+
+python3 results_v2_condition_matched/compute_fpkm_filter.py
+
+# ------------------------------------------------------------
+# STEP 5: Apply FPKM filter on top of rep-consistent + FP-filtered lists
+# ------------------------------------------------------------
+echo "=== FINAL: LG3 Control mobile mRNAs (rep-consistent + FP-filtered + FPKM > 0.05) ==="
+comm -12 <(sort results_v2_condition_matched/LG3_mobile_control_FINAL_v2.genes) <(sort results_v2_condition_matched/LG3_control_FPKM_passing.genes) > results_v2_condition_matched/LG3_mobile_control_TRUE_FINAL.genes
+wc -l results_v2_condition_matched/LG3_mobile_control_TRUE_FINAL.genes
+
+echo "=== FINAL: LG3 WF mobile mRNAs (rep-consistent + FP-filtered + FPKM > 0.05) ==="
+comm -12 <(sort results_v2_condition_matched/LG3_mobile_WF_FINAL_v2.genes) <(sort results_v2_condition_matched/LG3_WF_FPKM_passing.genes) > results_v2_condition_matched/LG3_mobile_WF_TRUE_FINAL.genes
+wc -l results_v2_condition_matched/LG3_mobile_WF_TRUE_FINAL.genes
+
+# ------------------------------------------------------------
+# STEP 6: Compare new results to old pooled-filter results
+# ------------------------------------------------------------
+echo "=== Compare Control: old vs new ==="
+diff <(sort results_v2_condition_matched/LG3_mobile_control_TRUE_FINAL.genes) <(sort results/LG_mobile_control.genes)
+
+echo "=== Compare WF: old vs new ==="
+diff <(sort results_v2_condition_matched/LG3_mobile_WF_TRUE_FINAL.genes) <(sort results/LG_mobile_whitefly.genes)
