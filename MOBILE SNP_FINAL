@@ -1,0 +1,406 @@
+# ================================================================
+# MASTER SNP VALIDATION PIPELINE — FULL VERSION
+# Used for LG3 / CSB / MM30. To reuse for a new rootstock, replace:
+#   - ROOTSTOCK_FOLDER, ROOTSTOCK_NAME, ROOTSTOCK_CDS/GENOME/GFF
+#   - Sample numbers for that rootstock's Control/WF BAM files
+# ================================================================
+
+# ----------------------------------------------------------------
+# PART A: ORTHOLOG FINDING (BLAST candidate genes vs watermelon)
+# ----------------------------------------------------------------
+cd ~/ROOTSTOCK_FOLDER
+mkdir -p SNP_ROOTSTOCK/ortholog_mapping SNP_ROOTSTOCK/final_tables
+
+cat results_v2_condition_matched/ROOTSTOCK_mobile_control_TRUE_FINAL.genes \
+    results_v2_condition_matched/ROOTSTOCK_mobile_WF_TRUE_FINAL.genes \
+    | sort -u > SNP_ROOTSTOCK/ortholog_mapping/ROOTSTOCK_all_candidate_genes.txt
+
+wc -l SNP_ROOTSTOCK/ortholog_mapping/ROOTSTOCK_all_candidate_genes.txt
+
+python3 << 'EOF'
+gene_list = set()
+with open('SNP_ROOTSTOCK/ortholog_mapping/ROOTSTOCK_all_candidate_genes.txt') as f:
+    for line in f:
+        gene_list.add(line.strip())
+
+output = open('SNP_ROOTSTOCK/ortholog_mapping/ROOTSTOCK_candidate_CDS.fa', 'w')
+write_seq = False
+with open('ROOTSTOCK_CDS.fa') as f:
+    for line in f:
+        if line.startswith('>'):
+            header_id = line[1:].strip().split('.')[0]
+            write_seq = header_id in gene_list
+        if write_seq:
+            output.write(line)
+output.close()
+EOF
+
+grep -c '>' SNP_ROOTSTOCK/ortholog_mapping/ROOTSTOCK_candidate_CDS.fa
+
+makeblastdb -in WCG_CDS_v2.5.fa -dbtype nucl -out SNP_ROOTSTOCK/ortholog_mapping/WCG_CDS_blastdb
+
+blastn -query SNP_ROOTSTOCK/ortholog_mapping/ROOTSTOCK_candidate_CDS.fa \
+       -db SNP_ROOTSTOCK/ortholog_mapping/WCG_CDS_blastdb \
+       -outfmt "6 qseqid sseqid pident length evalue bitscore" \
+       -max_target_seqs 1 -evalue 1e-10 \
+       -out SNP_ROOTSTOCK/ortholog_mapping/ROOTSTOCK_vs_WCG_blast_results.tsv
+
+python3 << 'EOF'
+best_hits = {}
+with open('SNP_ROOTSTOCK/ortholog_mapping/ROOTSTOCK_vs_WCG_blast_results.tsv') as f:
+    for line in f:
+        parts = line.strip().split('\t')
+        gene_id = parts[0].split('.')[0]
+        wm_gene = parts[1].split('.')[0]
+        bitscore = float(parts[5])
+        if gene_id not in best_hits or bitscore > best_hits[gene_id][2]:
+            best_hits[gene_id] = (wm_gene, float(parts[2]), bitscore)
+
+all_genes = set()
+with open('SNP_ROOTSTOCK/ortholog_mapping/ROOTSTOCK_all_candidate_genes.txt') as f:
+    for line in f:
+        all_genes.add(line.strip())
+
+print(f"Total candidate genes: {len(all_genes)}")
+print(f"Genes with a BLAST ortholog match: {len(set(best_hits.keys()) & all_genes)}")
+print(f"Genes with NO BLAST hit: {len(all_genes - set(best_hits.keys()))}")
+
+with open('SNP_ROOTSTOCK/ortholog_mapping/ROOTSTOCK_ortholog_pairs.csv', 'w') as out:
+    out.write("ROOTSTOCK_gene,WM_ortholog,percent_identity,bitscore\n")
+    for gene_id in sorted(all_genes):
+        if gene_id in best_hits:
+            wm_gene, pident, bitscore = best_hits[gene_id]
+            out.write(f"{gene_id},{wm_gene},{pident},{bitscore}\n")
+        else:
+            out.write(f"{gene_id},NO_ORTHOLOG_FOUND,NA,NA\n")
+
+for cond, fname, outname in [
+    ('control', 'results_v2_condition_matched/ROOTSTOCK_mobile_control_TRUE_FINAL.genes', 'SNP_ROOTSTOCK/ROOTSTOCK_Control_mobile_NEW.csv'),
+    ('wf', 'results_v2_condition_matched/ROOTSTOCK_mobile_WF_TRUE_FINAL.genes', 'SNP_ROOTSTOCK/ROOTSTOCK_Whitefly_mobile_NEW.csv')
+]:
+    genes = [line.strip() for line in open(fname)]
+    with open(outname, 'w') as out:
+        out.write("ROOTSTOCK_gene,WM_ortholog\n")
+        for gene in genes:
+            if gene in best_hits:
+                out.write(f'{gene},"{best_hits[gene][0]}"\n')
+    n_matched = sum(1 for g in genes if g in best_hits)
+    print(f"{cond} CSV: {n_matched} genes with orthologs (out of {len(genes)})")
+EOF
+
+
+# ----------------------------------------------------------------
+# PART B: FULL SNP VALIDATION PIPELINE (save as .sh, then run)
+# ----------------------------------------------------------------
+cat > SNP_validation_pipeline_ROOTSTOCK.sh << 'SCRIPT_END'
+#!/bin/bash
+BASE_DIR=~/ROOTSTOCK_FOLDER
+GENOME_DIR=$BASE_DIR
+BAM_DIR=$BASE_DIR/bam
+SNP_DIR=$BASE_DIR/SNP_ROOTSTOCK/SNP_analysis_output
+ROOTSTOCK_GENOME=$GENOME_DIR/ROOTSTOCK_genome.fa
+WM_GENOME=$GENOME_DIR/WCG_genome_v2.5.fa
+ROOTSTOCK_GFF=$GENOME_DIR/ROOTSTOCK.gff3
+WM_GFF=$GENOME_DIR/WCG_v2.5.gff3
+CONTROL_CSV=$BASE_DIR/SNP_ROOTSTOCK/ROOTSTOCK_Control_mobile_NEW.csv
+WHITEFLY_CSV=$BASE_DIR/SNP_ROOTSTOCK/ROOTSTOCK_Whitefly_mobile_NEW.csv
+
+mkdir -p $SNP_DIR
+cd $SNP_DIR
+
+echo "STEP 1: Index genomes"
+samtools faidx $ROOTSTOCK_GENOME
+samtools faidx $WM_GENOME
+
+run_snp_analysis() {
+    PREFIX=$1
+    CSV_FILE=$2
+    ROOTSTOCK_SAMPLES=$3
+    CTRL_SAMPLES=$4
+
+    echo "Processing: $PREFIX"
+
+    tail -n +2 $CSV_FILE | cut -d',' -f1 > ${PREFIX}_genes.txt
+
+    tail -n +2 $CSV_FILE | \
+    awk -F',' '{
+        gsub(/"/, "", $2)
+        split($2, a, " ")
+        gsub(/ /, "", a[1])
+        if(a[1] != "") print $1"\t"a[1]
+        else print $1"\t"
+    }' > ${PREFIX}_ortholog_pairs.txt
+
+    grep -Ff ${PREFIX}_genes.txt $ROOTSTOCK_GFF | grep $'\tgene\t' | \
+    awk 'BEGIN{OFS="\t"}{
+        id=$9; gsub(/.*ID=/,"",id); gsub(/;.*/,"",id)
+        print $1, $4-1, $5, id, ".", $7
+    }' > ${PREFIX}_rootstock_genes.bed
+
+    bedtools getfasta -fi $ROOTSTOCK_GENOME -bed ${PREFIX}_rootstock_genes.bed \
+        -s -name > ${PREFIX}_rootstock_sequences.fa
+
+    cat ${PREFIX}_ortholog_pairs.txt | \
+        awk '{if($2!="") print $2}' | \
+        grep -oP 'ClCG\d+G\d+' > ${PREFIX}_WM_genes_stripped.txt
+
+    grep -Ff ${PREFIX}_WM_genes_stripped.txt $WM_GFF | grep $'\tgene\t' | \
+    awk 'BEGIN{OFS="\t"}{
+        id=$9; gsub(/.*ID=/,"",id); gsub(/;.*/,"",id)
+        print $1, $4-1, $5, id, ".", $7
+    }' > ${PREFIX}_WM_genes.bed
+
+    bedtools getfasta -fi $WM_GENOME -bed ${PREFIX}_WM_genes.bed \
+        -s -name > ${PREFIX}_WM_sequences.fa
+
+    mkdir -p ${PREFIX}_alignments ${PREFIX}_snps
+
+    while read rs wm
+    do
+        if [ -z "$wm" ]; then continue; fi
+        wm_stripped=$(echo $wm | grep -oP 'ClCG\d+G\d+')
+
+        awk -v id="$rs" '/^>/{found=($0~id)?1:0} found{print}' \
+            ${PREFIX}_rootstock_sequences.fa > temp_RS.fa
+        awk -v id="$wm_stripped" '/^>/{found=($0~id)?1:0} found{print}' \
+            ${PREFIX}_WM_sequences.fa > temp_WM.fa
+
+        if [ ! -s temp_RS.fa ] || [ ! -s temp_WM.fa ]; then continue; fi
+
+        cat temp_RS.fa temp_WM.fa > temp_combined.fa
+        mafft --quiet temp_combined.fa > ${PREFIX}_alignments/${rs}_vs_${wm_stripped}.aln
+    done < ${PREFIX}_ortholog_pairs.txt
+
+python3 << PYEOF
+import os, glob
+alignment_dir = "${PREFIX}_alignments"
+snp_dir = "${PREFIX}_snps"
+for aln_file in glob.glob(f"{alignment_dir}/*.aln"):
+    basename = os.path.basename(aln_file).replace(".aln", "")
+    if basename.endswith("vs_"): continue
+    sequences, current_id = {}, None
+    with open(aln_file) as f:
+        for line in f:
+            line = line.strip()
+            if line.startswith(">"):
+                current_id = line[1:]; sequences[current_id] = ""
+            else:
+                sequences[current_id] += line
+    if len(sequences) < 2: continue
+    ids = list(sequences.keys())
+    seq1, seq2 = sequences[ids[0]], sequences[ids[1]]
+    snps, pos = [], 0
+    for a, b in zip(seq1, seq2):
+        if a != '-': pos += 1
+        if a != b and a != '-' and b != '-' and a != 'N' and b != 'N':
+            snps.append((pos, a, b))
+    with open(f"{snp_dir}/{basename}.snps.txt", "w") as out:
+        out.write("Gene_pair\tPosition\tRootstock\tWatermelon\n")
+        for pos, rs, wm in snps:
+            out.write(f"{basename}\t{pos}\t{rs}\t{wm}\n")
+PYEOF
+
+python3 << PYEOF
+import os, glob
+wm_coords = {}
+with open("${PREFIX}_WM_genes.bed") as f:
+    for line in f:
+        chrom, start, end, gene_id, dot, strand = line.strip().split("\t")
+        wm_coords[gene_id] = (chrom, int(start), int(end), strand)
+
+outfile = open("${PREFIX}_SNP_genome_coords.tsv", "w")
+outfile.write("Rootstock_gene\tWM_gene\tWM_chrom\tWM_genome_pos\tRootstock_allele\tWM_allele\n")
+
+for aln_file in glob.glob("${PREFIX}_alignments/*.aln"):
+    basename = os.path.basename(aln_file).replace(".aln", "")
+    if basename.endswith("vs_"): continue
+    snp_file = f"${PREFIX}_snps/{basename}.snps.txt"
+    if not os.path.exists(snp_file): continue
+    rs_gene, wm_gene = basename.split("_vs_")
+    if wm_gene not in wm_coords: continue
+    chrom, start, end, strand = wm_coords[wm_gene]
+    sequences, current_id = {}, None
+    with open(aln_file) as f:
+        for line in f:
+            line = line.strip()
+            if line.startswith(">"):
+                current_id = line[1:].split("::")[0]; sequences[current_id] = ""
+            else:
+                sequences[current_id] += line
+    if len(sequences) < 2: continue
+    ids = list(sequences.keys())
+    seq_rs, seq_wm = sequences[ids[0]], sequences[ids[1]]
+    rs_pos, wm_pos, rs_to_wm = 0, 0, {}
+    for a, b in zip(seq_rs, seq_wm):
+        if a != '-': rs_pos += 1
+        if b != '-': wm_pos += 1
+        if a != '-': rs_to_wm[rs_pos] = wm_pos if b != '-' else None
+    with open(snp_file) as f:
+        next(f)
+        for line in f:
+            parts = line.strip().split("\t")
+            rs_snp_pos, rs_allele, wm_allele = int(parts[1]), parts[2], parts[3]
+            wm_snp_pos = rs_to_wm.get(rs_snp_pos)
+            if wm_snp_pos is None: continue
+            genome_pos = start + wm_snp_pos if strand == "+" else end - wm_snp_pos
+            outfile.write(f"{rs_gene}\t{wm_gene}\t{chrom}\t{genome_pos}\t{rs_allele}\t{wm_allele}\n")
+outfile.close()
+PYEOF
+
+    tail -n +2 ${PREFIX}_SNP_genome_coords.tsv | \
+        awk '{print $3"\t"$4}' > ${PREFIX}_snp_positions.bed
+
+    samtools mpileup -l ${PREFIX}_snp_positions.bed -f $WM_GENOME \
+        $CTRL_SAMPLES $ROOTSTOCK_SAMPLES 2>/dev/null > ${PREFIX}_snp_pileup.txt
+
+python3 << PYEOF
+import os
+snp_info = {}
+with open("${PREFIX}_SNP_genome_coords.tsv") as f:
+    next(f)
+    for line in f:
+        parts = line.strip().split("\t")
+        rs_gene, wm_gene, chrom, pos, rs_allele, wm_allele = parts
+        snp_info[(chrom, pos)] = (rs_gene, wm_gene, rs_allele, wm_allele)
+
+def count_allele(pileup_str, allele):
+    return pileup_str.upper().count(allele.upper())
+
+RS_idx = [12, 13, 14]
+ctrl_idx = list(range(12))
+results = []
+with open("${PREFIX}_snp_pileup.txt") as f:
+    for line in f:
+        fields = line.strip().split("\t")
+        if len(fields) < 6: continue
+        chrom, pos = fields[0], fields[1]
+        key = (chrom, pos)
+        if key not in snp_info: continue
+        rs_gene, wm_gene, rs_allele, wm_allele = snp_info[key]
+        pileups = [fields[3 + i*3 + 1] if 3+i*3+1 < len(fields) else "" for i in range(15)]
+        rs_counts = [count_allele(pileups[i], rs_allele) for i in RS_idx]
+        ctrl_counts = [count_allele(pileups[i], rs_allele) for i in ctrl_idx]
+        if sum(rs_counts) > 0 and sum(ctrl_counts) == 0:
+            results.append({"gene": rs_gene, "chrom": chrom, "pos": pos,
+                             "rs_allele": rs_allele, "wm_allele": wm_allele,
+                             "r1": rs_counts[0], "r2": rs_counts[1], "r3": rs_counts[2]})
+
+with open("${PREFIX}_SNP_final_validated.tsv", "w") as out:
+    out.write("Gene\tChrom\tPos\tRS_allele\tWM_allele\tRep1_reads\tRep2_reads\tRep3_reads\n")
+    for r in results:
+        out.write(f"{r['gene']}\t{r['chrom']}\t{r['pos']}\t{r['rs_allele']}\t{r['wm_allele']}\t{r['r1']}\t{r['r2']}\t{r['r3']}\n")
+
+genes = {}
+for r in results:
+    g = r["gene"]
+    if g not in genes: genes[g] = {"positions":0,"r1":0,"r2":0,"r3":0,"rep2":0}
+    genes[g]["positions"] += 1
+    genes[g]["r1"] += r["r1"]; genes[g]["r2"] += r["r2"]; genes[g]["r3"] += r["r3"]
+    if sum([r["r1"]>0, r["r2"]>0, r["r3"]>0]) >= 2:
+        genes[g]["rep2"] += 1
+
+print(f"Total validated positions: {len(results)}")
+for g, d in sorted(genes.items(), key=lambda x: -x[1]["positions"]):
+    print(f"{g}: {d['positions']} positions, rep1={d['r1']}, rep2={d['r2']}, rep3={d['r3']}, in_2reps={d['rep2']}")
+PYEOF
+
+    echo "$PREFIX analysis complete!"
+}
+
+echo "Running CONTROL SNP validation..."
+CTRL_BAMS="$BAM_DIR/S1_trimmed_vsWM.bam $BAM_DIR/S2_trimmed_vsWM.bam $BAM_DIR/S3_trimmed_vsWM.bam \
+           $BAM_DIR/S4_trimmed_vsWM.bam $BAM_DIR/S5_trimmed_vsWM.bam $BAM_DIR/S6_trimmed_vsWM.bam \
+           $BAM_DIR/S16_trimmed_vsWM.bam $BAM_DIR/S17_trimmed_vsWM.bam $BAM_DIR/S18_trimmed_vsWM.bam \
+           $BAM_DIR/S19_trimmed_vsWM.bam $BAM_DIR/S20_trimmed_vsWM.bam $BAM_DIR/S21_trimmed_vsWM.bam"
+ROOTSTOCK_CONTROL_BAMS="$BAM_DIR/SX_trimmed_vsWM.bam $BAM_DIR/SY_trimmed_vsWM.bam $BAM_DIR/SZ_trimmed_vsWM.bam"
+run_snp_analysis "control" $CONTROL_CSV "$ROOTSTOCK_CONTROL_BAMS" "$CTRL_BAMS"
+
+echo "Running WHITEFLY SNP validation..."
+ROOTSTOCK_WF_BAMS="$BAM_DIR/SA_trimmed_vsWM.bam $BAM_DIR/SB_trimmed_vsWM.bam $BAM_DIR/SC_trimmed_vsWM.bam"
+run_snp_analysis "whitefly" $WHITEFLY_CSV "$ROOTSTOCK_WF_BAMS" "$CTRL_BAMS"
+
+echo "ALL DONE!"
+SCRIPT_END
+
+chmod +x SNP_validation_pipeline_ROOTSTOCK.sh
+# Run it:
+# ./SNP_validation_pipeline_ROOTSTOCK.sh 2>&1 | tee SNP_ROOTSTOCK/pipeline_run_log.txt
+
+
+# ----------------------------------------------------------------
+# PART C: BUILD MASTER + TOP-10 TABLES
+# ----------------------------------------------------------------
+python3 << 'EOF'
+import csv
+
+ortholog_info = {}
+with open('SNP_ROOTSTOCK/ortholog_mapping/ROOTSTOCK_ortholog_pairs.csv') as f:
+    next(f)
+    for line in f:
+        parts = line.strip().split(',')
+        ortholog_info[parts[0]] = (parts[1], parts[2])
+
+def aggregate_snp_data(validated_tsv):
+    gene_data = {}
+    with open(validated_tsv) as f:
+        next(f)
+        for line in f:
+            parts = line.strip().split('\t')
+            gene = parts[0]
+            r1, r2, r3 = int(parts[5]), int(parts[6]), int(parts[7])
+            if gene not in gene_data:
+                gene_data[gene] = {'positions': 0, 'r1': 0, 'r2': 0, 'r3': 0, 'reps_2plus': 0}
+            gene_data[gene]['positions'] += 1
+            gene_data[gene]['r1'] += r1
+            gene_data[gene]['r2'] += r2
+            gene_data[gene]['r3'] += r3
+            if sum([r1 > 0, r2 > 0, r3 > 0]) >= 2:
+                gene_data[gene]['reps_2plus'] += 1
+    return gene_data
+
+def build_master_table(all_genes_file, snp_data, out_file):
+    all_genes = [line.strip() for line in open(all_genes_file)]
+    with open(out_file, 'w', newline='') as out:
+        writer = csv.writer(out, delimiter='\t')
+        writer.writerow(['Gene_ID','WM_Ortholog','BLAST_Percent_Identity',
+                          'SNP_validated_positions','Positions_in_2plus_reps',
+                          'Rep1_reads','Rep2_reads','Rep3_reads','Confidence'])
+        for gene in all_genes:
+            wm_gene, pident = ortholog_info.get(gene, ('NA','NA'))
+            if gene in snp_data:
+                d = snp_data[gene]
+                if d['reps_2plus'] >= 3: conf = 'High (multi-position, replicate-consistent)'
+                elif d['reps_2plus'] >= 1: conf = 'Medium-High (replicate-consistent SNP support)'
+                elif d['positions'] >= 5: conf = 'Medium (multiple SNP positions, single-rep)'
+                else: conf = 'Low (single/few SNP position, single-rep)'
+                writer.writerow([gene, wm_gene, pident, d['positions'], d['reps_2plus'],
+                                  d['r1'], d['r2'], d['r3'], conf])
+            else:
+                writer.writerow([gene, wm_gene, pident, 0,0,0,0,0,'No SNP evidence'])
+
+def print_top10(master_file, label):
+    print(f"\n=== TOP 10 - {label} ===")
+    rows = []
+    with open(master_file) as f:
+        reader = csv.reader(f, delimiter='\t')
+        next(reader)
+        for row in reader:
+            gene, wm_gene, pident, positions, reps_2plus, r1, r2, r3, confidence = row
+            if int(positions) > 0:
+                rows.append((gene, wm_gene, pident, int(positions), reps_2plus, confidence))
+    rows.sort(key=lambda x: -x[3])
+    for i, r in enumerate(rows[:10], 1):
+        print(f"{i:<5}{r[0]:<18}{r[1]:<16}{r[2]:<8}{r[3]:<10}{r[4]:<8}{r[5]}")
+    print(f"\nTotal genes with SNP support: {len(rows)}")
+
+control_snp_data = aggregate_snp_data('SNP_ROOTSTOCK/SNP_analysis_output/control_SNP_final_validated.tsv')
+build_master_table('results_v2_condition_matched/ROOTSTOCK_mobile_control_TRUE_FINAL.genes',
+                    control_snp_data, 'SNP_ROOTSTOCK/final_tables/ROOTSTOCK_Control_SNP_master_table.tsv')
+
+wf_snp_data = aggregate_snp_data('SNP_ROOTSTOCK/SNP_analysis_output/whitefly_SNP_final_validated.tsv')
+build_master_table('results_v2_condition_matched/ROOTSTOCK_mobile_WF_TRUE_FINAL.genes',
+                    wf_snp_data, 'SNP_ROOTSTOCK/final_tables/ROOTSTOCK_WF_SNP_master_table.tsv')
+
+print_top10('SNP_ROOTSTOCK/final_tables/ROOTSTOCK_Control_SNP_master_table.tsv', 'ROOTSTOCK Control')
+print_top10('SNP_ROOTSTOCK/final_tables/ROOTSTOCK_WF_SNP_master_table.tsv', 'ROOTSTOCK WF')
+EOF
