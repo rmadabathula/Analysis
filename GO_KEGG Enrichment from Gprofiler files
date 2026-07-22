@@ -1,0 +1,217 @@
+# =============================================================================
+# GO and KEGG enrichment dot plots — Upregulated vs Downregulated DEGs
+# 5 grafting combinations: UG, SG, CSB, LG3, MM30
+# Input: g:Profiler exports (one CSV per combination x direction), 10 files total
+# Output: GO_upregulated_top30.png, GO_downregulated_top30.png,
+#         KEGG_upregulated.png, KEGG_downregulated.png, KEGG_combined_updown.png
+# =============================================================================
+
+library(tidyverse)
+
+# -----------------------------------------------------------------------------
+# 1. Read all 10 g:Profiler export files from the working directory
+# -----------------------------------------------------------------------------
+files <- tibble(
+  combination = c("UG","UG","SG","SG","CSB","CSB","LG3","LG3","MM30","MM30"),
+  direction   = c("UP","DOWN","UP","DOWN","UP","DOWN","UP","DOWN","UP","DOWN"),
+  filename    = c("UG_UP.csv","UG_DOWN.csv",
+                   "SG_UP.csv","SG_DOWN.csv",
+                   "CSB_UP.csv","CSB_DOWN.csv",
+                   "LG3_UP.csv","LG3_DOWN.csv",
+                   "MM30_UP.csv","MM30_DOWN.csv")
+)
+
+df <- files %>%
+  mutate(data = map(filename, read_csv, show_col_types = FALSE)) %>%
+  unnest(data) %>%
+  select(-filename)
+
+write_csv(df, "combined_enrichment.csv")  # saved for reuse / sharing
+
+# -----------------------------------------------------------------------------
+# 2. Shared plot settings
+# -----------------------------------------------------------------------------
+combo_order  <- c("UG", "SG", "CSB", "LG3", "MM30")
+label_map    <- c(UG="UGWF/UG", SG="SGWF/SG", CSB="CSBWF/CSB",
+                   LG3="LG3WF/LG3", MM30="MM30WF/MM30")
+source_order <- c("GO:BP", "GO:CC", "GO:MF")   # bottom block -> top block
+padj_colors  <- c("red", "magenta", "purple", "blue")
+
+# -----------------------------------------------------------------------------
+# 3. GO plot: top 10 BP + 10 CC + 10 MF, faceted into 3 stacked blocks
+# -----------------------------------------------------------------------------
+make_go_top30 <- function(data, direction, title) {
+
+  sub <- data %>% filter(direction == !!direction, source %in% source_order)
+
+  # top 10 terms per GO namespace, by best (min) padj across all 5 combinations
+  term_blocks <- map(source_order, function(src) {
+    sub %>%
+      filter(source == src) %>%
+      group_by(term_name) %>%
+      summarise(best_padj = min(adjusted_p_value), .groups = "drop") %>%
+      slice_min(best_padj, n = 10) %>%
+      arrange(desc(best_padj)) %>%   # least significant first -> bottom of its block
+      pull(term_name)
+  })
+  term_order <- unlist(term_blocks)  # position 1 = bottom of whole plot
+
+  plot_df <- sub %>%
+    filter(term_name %in% term_order) %>%
+    group_by(term_name, combination) %>%
+    slice_min(adjusted_p_value, n = 1) %>%
+    ungroup() %>%
+    mutate(
+      combination = factor(combination, levels = combo_order),
+      term_name   = factor(term_name, levels = term_order),
+      source      = factor(source, levels = rev(source_order))  # MF top facet, BP bottom facet
+    )
+
+  ggplot(plot_df, aes(x = combination, y = term_name)) +
+    geom_point(aes(size = intersection_size, color = pmin(adjusted_p_value, 0.05))) +
+    facet_grid(source ~ ., scales = "free_y", space = "free_y",
+               labeller = as_labeller(c("GO:BP" = "BP", "GO:CC" = "CC", "GO:MF" = "MF"))) +
+    scale_x_discrete(labels = label_map) +
+    scale_color_gradientn(colors = padj_colors, limits = c(0, 0.05), name = "padj") +
+    scale_size_continuous(name = "Count", range = c(2, 10)) +
+    guides(
+      color = guide_colorbar(order = 1),
+      size  = guide_legend(order = 2)
+    ) +
+    labs(title = title, x = NULL, y = NULL) +
+    theme_bw(base_size = 11) +
+    theme(
+      axis.text.x = element_text(angle = 45, hjust = 1),
+      panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank(),
+      strip.background = element_blank(),
+      strip.text.y = element_text(face = "bold", size = 11, angle = 0),
+      panel.spacing.y = unit(6, "pt")
+    )
+}
+
+p_go_up   <- make_go_top30(df, "UP",   "Combined GO enrichment — Upregulated genes (top 10 BP, CC, MF)")
+p_go_down <- make_go_top30(df, "DOWN", "Combined GO enrichment — Downregulated genes (top 10 BP, CC, MF)")
+
+ggsave("GO_upregulated_top30.png",   p_go_up,   width = 9.5, height = 9, dpi = 300)
+ggsave("GO_downregulated_top30.png", p_go_down, width = 9.5, height = 9, dpi = 300)
+
+# -----------------------------------------------------------------------------
+# 4. Individual KEGG plots (top 10 terms, one direction at a time)
+# -----------------------------------------------------------------------------
+make_kegg_individual <- function(data, direction, top_n, title) {
+
+  sub <- data %>% filter(direction == !!direction, source == "KEGG")
+
+  term_order <- sub %>%
+    group_by(term_name) %>%
+    summarise(best_padj = min(adjusted_p_value), .groups = "drop") %>%
+    slice_min(best_padj, n = top_n) %>%
+    arrange(desc(best_padj)) %>%
+    pull(term_name)
+
+  plot_df <- sub %>%
+    filter(term_name %in% term_order) %>%
+    group_by(term_name, combination) %>%
+    slice_min(adjusted_p_value, n = 1) %>%
+    ungroup() %>%
+    mutate(
+      combination = factor(combination, levels = combo_order),
+      term_name   = factor(term_name, levels = term_order)
+    )
+
+  ggplot(plot_df, aes(x = combination, y = term_name)) +
+    geom_point(aes(size = intersection_size, color = pmin(adjusted_p_value, 0.05))) +
+    scale_x_discrete(labels = label_map) +
+    scale_color_gradientn(colors = padj_colors, limits = c(0, 0.05), name = "padj") +
+    scale_size_continuous(name = "Count", range = c(2, 10)) +
+    guides(
+      color = guide_colorbar(order = 1),
+      size  = guide_legend(order = 2)
+    ) +
+    labs(title = title, x = NULL, y = NULL) +
+    theme_bw(base_size = 11) +
+    theme(
+      axis.text.x = element_text(angle = 45, hjust = 1),
+      panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank()
+    )
+}
+
+p_kegg_up   <- make_kegg_individual(df, "UP",   10, "Combined KEGG enrichment — Upregulated genes")
+p_kegg_down <- make_kegg_individual(df, "DOWN", 10, "Combined KEGG enrichment — Downregulated genes")
+
+ggsave("KEGG_upregulated.png",   p_kegg_up,   width = 8, height = 4.5, dpi = 300)
+ggsave("KEGG_downregulated.png", p_kegg_down, width = 8, height = 5,   dpi = 300)
+
+# -----------------------------------------------------------------------------
+# 5. Combined KEGG plot: Up and Down side-by-side, shared term list
+#    (top N terms PER DIRECTION separately, then unioned — this matters:
+#     a term significant only in UP, or only in DOWN, for some combination
+#     must not be squeezed out by terms that are strong in both directions)
+# -----------------------------------------------------------------------------
+make_kegg_combined <- function(data, top_n, title) {
+
+  sub <- data %>% filter(source == "KEGG")
+
+  top_terms <- map(c("UP", "DOWN"), function(direc) {
+    sub %>%
+      filter(direction == direc) %>%
+      group_by(term_name) %>%
+      summarise(best_padj = min(adjusted_p_value), .groups = "drop") %>%
+      slice_min(best_padj, n = top_n) %>%
+      pull(term_name)
+  }) %>% unlist() %>% unique()
+
+  term_order <- sub %>%
+    filter(term_name %in% top_terms) %>%
+    group_by(term_name) %>%
+    summarise(best_padj = min(adjusted_p_value), .groups = "drop") %>%
+    arrange(desc(best_padj)) %>%
+    pull(term_name)
+
+  plot_df <- sub %>%
+    filter(term_name %in% term_order) %>%
+    group_by(term_name, combination, direction) %>%
+    slice_min(adjusted_p_value, n = 1) %>%
+    ungroup() %>%
+    mutate(
+      combination = factor(combination, levels = combo_order),
+      term_name   = factor(term_name, levels = term_order),
+      direction   = factor(direction, levels = c("UP", "DOWN"),
+                            labels = c("Upregulated", "Downregulated"))
+    )
+
+  ggplot(plot_df, aes(x = combination, y = term_name)) +
+    geom_point(aes(size = intersection_size, color = pmin(adjusted_p_value, 0.05))) +
+    facet_grid(. ~ direction) +
+    scale_x_discrete(labels = label_map) +
+    scale_color_gradientn(colors = padj_colors, limits = c(0, 0.05), name = "padj") +
+    scale_size_continuous(name = "Count", range = c(2, 10)) +
+    guides(
+      color = guide_colorbar(order = 1),
+      size  = guide_legend(order = 2)
+    ) +
+    labs(title = title, x = NULL, y = NULL) +
+    theme_bw(base_size = 11) +
+    theme(
+      axis.text.x = element_text(angle = 45, hjust = 1),
+      panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank(),
+      strip.background = element_blank(),
+      strip.text = element_text(face = "bold", size = 11)
+    )
+}
+
+p_kegg_combined <- make_kegg_combined(df, top_n = 10,
+                     title = "Combined KEGG enrichment — Upregulated vs Downregulated genes")
+
+ggsave("KEGG_combined_updown.png", p_kegg_combined, width = 12, height = 5.5, dpi = 300)
+
+# =============================================================================
+# Done. Files written to working directory:
+#   GO_upregulated_top30.png     GO_downregulated_top30.png
+#   KEGG_upregulated.png         KEGG_downregulated.png
+#   KEGG_combined_updown.png
+#   combined_enrichment.csv      (all 10 inputs, tagged and stacked)
+# =============================================================================
